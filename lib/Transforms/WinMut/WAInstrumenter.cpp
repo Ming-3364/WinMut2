@@ -17,6 +17,8 @@
 #include <signal.h>
 #include <unistd.h>
 
+# define OUTPUT
+
 using namespace llvm;
 
 WAInstrumenter::WAInstrumenter(bool useWindowAnalysis, bool optimizedInstrumentation) : ModulePass(ID), useWindowAnalysis(useWindowAnalysis), optimizedInstrumentation(optimizedInstrumentation) {}
@@ -2073,9 +2075,10 @@ void WAInstrumenter::instrumentInst(Instruction &I, bool aboutGoodVariable,
   Instruction *cur_it = &I;
 
 #ifdef OUTPUT
-  llvm::errs() << "CUR_INST: " << tmp.front()->index << "  (FROM:" << mut_from
-               << "  TO:" << mut_to << "  AboutGoodVar: " << aboutGoodVariable
-               << ")\t" << *cur_it << "\n";
+// ???
+  // llvm::errs() << "CUR_INST: " << tmp.front()->index << "  (FROM:" << mut_from
+  //              << "  TO:" << mut_to << "  AboutGoodVar: " << aboutGoodVariable
+  //              << ")\t" << *cur_it << "\n";
 #endif
 
   // CallInst Navigation
