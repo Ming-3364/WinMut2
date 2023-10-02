@@ -9,8 +9,8 @@
 
 ## More Infomation
 
-- https://llvm.org/docs/CodingStandards.html
-- https://llvm.org/doxygen/
+- <https://llvm.org/docs/CodingStandards.html>
+- <https://llvm.org/doxygen/>
 
 ## 日报
 
