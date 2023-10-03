@@ -2248,7 +2248,7 @@ void WAInstrumenter::filterRealGoodVariables() {
   }
 
 #ifdef OUTPUT
-  llvm::errs() << "GVC: " << goodVariables.size() << "\n";
+  llvm::errs() << "GVC1: " << goodVariables.size() << "\n";
 #endif
 }
 
