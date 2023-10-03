@@ -14,11 +14,11 @@
 
 ## TODO
 
-- [] 理解WinMut代码流程
-  - [] 阅读AccMut源码
-  - [] 调试AccMut输出
-  - [] 阅读WinMut源码
-  - [] 调试WinMut输出
+- [ ] 理解WinMut代码流程
+  - [ ] 阅读AccMut源码
+  - [ ] 调试AccMut输出
+  - [ ] 阅读WinMut源码
+  - [ ] 调试WinMut输出
 
 ## 日报
 
