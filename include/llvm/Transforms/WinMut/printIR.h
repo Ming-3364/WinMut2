@@ -12,6 +12,7 @@ inline void printIR(Module &M, const char *suffix) {
   os << M;
   os.flush();
   auto name = std::string(M.getName()) + suffix;
+  // errs() << "printIR: " << name << "\n";
   FILE *f = fopen(name.c_str(), "w");
   if (f) {
     fputs(ir.c_str(), f);

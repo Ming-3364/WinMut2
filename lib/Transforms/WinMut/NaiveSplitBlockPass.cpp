@@ -8,6 +8,7 @@
 #include "llvm/Support/raw_ostream.h"
 
 bool NaiveSplitBlockPass::runOnModule(Module &M) {
+  errs() << "NaiveSplitBlockPass::runOnModule: " << M.getName() <<"\n";
   bool ret = false;
   for (auto &f : M) {
     if (!f.isDeclaration()) {

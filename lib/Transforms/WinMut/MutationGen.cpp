@@ -54,6 +54,7 @@ static LoopInfo *LI;
 #endif
 
 bool MutationGen::runOnModule(Module &M) {
+  errs() << "MutationGen::runOnModule: " << M.getName() <<"\n";
   bool changed = false;
   filename = static_cast<std::string>(M.getName()) + ".mut";
 #ifdef OUTPUT

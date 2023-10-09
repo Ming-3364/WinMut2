@@ -16,6 +16,7 @@ MSInstrumenter::MSInstrumenter(/*Module *M*/) : FunctionPass(ID) {
 }
 
 bool MSInstrumenter::runOnFunction(Function &F) {
+  errs() << "MSInstrumenter::runOnFunction: " << F.getName() <<"\n";
   if (F.getName().startswith("__accmut__")) {
     return false;
   }

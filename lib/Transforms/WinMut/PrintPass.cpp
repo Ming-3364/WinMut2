@@ -5,6 +5,7 @@ PrintPass::PrintPass() : PrintPass(".ll") {}
 char PrintPass::ID = 0;
 
 bool PrintPass::runOnModule(Module &M) {
+  errs() << "PrintPass::runOnModule: " << M.getName() <<"\n";
   printIR(M, suffix);
   return false;
 }

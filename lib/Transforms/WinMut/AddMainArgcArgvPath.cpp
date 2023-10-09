@@ -6,6 +6,7 @@ AddMainArgcArgvPass::AddMainArgcArgvPass() : ModulePass(ID) {}
 char AddMainArgcArgvPass::ID = 0;
 
 bool AddMainArgcArgvPass::runOnModule(Module &M) {
+  errs() << "AddMainArgcArgvPass::runOnModule: " << M.getName() <<"\n";
   for (Function &F : M) {
     if (F.getName() == "main") {
       if (F.arg_size() < 2) {

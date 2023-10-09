@@ -8,6 +8,7 @@
 UglyRenamePass::UglyRenamePass() : ModulePass(ID) {}
 
 bool UglyRenamePass::runOnModule(Module &M) {
+  errs() << "UglyRenamePass::runOnModule: " << M.getName() <<"\n";
   printIR(M, ".ori.ll");
 
   std::set<std::string> accmut_catched_func{

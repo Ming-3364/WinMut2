@@ -1078,7 +1078,7 @@ bool WAInstrumenter::readInMuts() {
 }
 
 bool WAInstrumenter::runOnModule(Module &M) {
-
+  errs() << "WAInstrumenter::runOnModule: " << M.getName() <<"\n";
   TheModule = &M;
   name = M.getName();
 

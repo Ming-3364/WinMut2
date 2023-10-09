@@ -12,6 +12,7 @@ InstrumentMainPass::InstrumentMainPass(const char *func_name)
 char InstrumentMainPass::ID = 0;
 
 bool InstrumentMainPass::runOnModule(Module &M) {
+  errs() << "InstrumentMainPass::runOnModule: " << M.getName() <<"\n";
   for (Function &F : M) {
     if (F.getName() == "main") {
       IntegerType *i32ty = IntegerType::get(M.getContext(), 32);
