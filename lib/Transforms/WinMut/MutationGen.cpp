@@ -12,6 +12,7 @@
 #include "llvm/Transforms/WinMut/MutationGen.h"
 
 #include <llvm/Support/FileSystem.h>
+#include <llvm/Support/Debug.h>
 #include <sstream>
 
 
@@ -54,6 +55,7 @@ static LoopInfo *LI;
 #endif
 
 bool MutationGen::runOnModule(Module &M) {
+  // DEBUG_WITH_TYPE("flow", dbgs() << "'bar' debug type\n");
   errs() << "MutationGen::runOnModule: " << M.getName() <<"\n";
   bool changed = false;
   filename = static_cast<std::string>(M.getName()) + ".mut";
