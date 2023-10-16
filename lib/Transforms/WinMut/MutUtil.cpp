@@ -36,7 +36,7 @@ void MutUtil::getAllMutations(const string &path) {
   // string path = getenv("HOME");
   // path += "/tmp/accmut/mutations.txt";
   string pathmut = path + ".mut";
-  errs() << pathmut << "\n";
+  // errs() << pathmut << "\n";
   std::ifstream fin(pathmut, ios::in);
 
   if (!fin.is_open()) {

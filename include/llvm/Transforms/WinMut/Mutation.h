@@ -11,6 +11,15 @@
 
 #define MAX_MUT_NUM_PER_LOCATION 10000
 
+/**
+ * - id
+ * - func
+ * - index
+ * - type
+ * - src_op
+ * 
+ * - Kind
+ */
 class Mutation {
 public:
   enum MutationKind {
@@ -44,8 +53,10 @@ public:
   Mutation(MutationKind K) : Kind(K) {}
 
   void dump() {
-    llvm::errs() << "\tID: " << this->id << "\tTYPE: " << this->type
-                 << " \tFUNC: " << this->func << "\tINDEX: " << this->index
+    llvm::errs() << "\tID: " << this->id 
+                 << "\tTYPE: " << this->type
+                 << "\tFUNC: " << this->func 
+                 << "\tINDEX: " << this->index
                  << "\tS_OP: " << this->src_op << '\n';
   }
 };

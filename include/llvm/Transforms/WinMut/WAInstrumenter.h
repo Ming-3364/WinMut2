@@ -57,6 +57,8 @@ struct IDTuple {
 };
 
 class WAInstrumenter : public ModulePass {
+  // - true for WinMut
+  // - false for AccMut
   bool useWindowAnalysis;
   bool optimizedInstrumentation;
   std::vector<std::string> skipFunctionList{"main", "mlp_filter_channel_x86"};
@@ -75,6 +77,7 @@ public:
 
 private:
   Module *TheModule = nullptr;
+  // GlobalVariable: regmutinfo
   GlobalVariable *rmigv = nullptr;
 
   int numOfGoodVar = 0;
@@ -84,6 +87,18 @@ private:
 
   bool runOnFunction(Function &F);
 
+  /**
+   * - i8, i32, i64, void, i8p
+   * - Mutation:          struct.Mutation
+   * - RegMutInfo:        struct.RegMutInfo
+   * - BlockRegMutBound:  struct.BlockRegMutBound
+   * - MutSpec:           struct.MutSpec
+   * - MutSpecs:          struct.MutSpecs
+   * - GoodvarArgInBlock: struct.GoodvarArgInBlock
+   * - GoodvarArg:        struct.GoodvarArg
+   * - registerFuncTy:    ？？？
+   * - 
+   */
   std::map<std::string, Type *> typeMapping;
   std::map<std::string, Function *> funcMapping;
 
@@ -124,6 +139,7 @@ private:
   complementaryGVSpec(const std::list<std::pair<int, int>> &all,
                       const std::list<std::pair<int, int>> &mask);
 
+  // 有goodvar的指令的对应最后一个变异的id到对应该goodvar的全局变量的映射
   std::map<int, GlobalVariable *> goodvarargGVs;
   GlobalVariable *goodvarargArray;
   void genGoodvarargArray();

@@ -121,7 +121,6 @@ template <typename OpType, typename RetType, CalcType calcType> struct CalcFunc;
 
 class MutationManager {
 public:
-
 private:
   template <typename OpType, typename RetType, CalcType calcType>
   friend struct CalcFunc;
@@ -684,7 +683,7 @@ RetType MutationManager::process_T_arith_goodvar(OpType left, OpType right,
   char buf[1024];
 #endif
 
-  switch (arg->status) {
+switch (arg->status) {
   case EXECUTE: {
 #ifdef DEBUG_OUTPUT
     int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
@@ -695,7 +694,7 @@ RetType MutationManager::process_T_arith_goodvar(OpType left, OpType right,
     return process_T_calc_mutation(op, left, right, f, MUTATION_ID);
   }
 
-  case BADVARLIKE: {
+  case BADVARLIKE: {  // 在基本块外被使用，badvar，需分流
 #ifdef DEBUG_OUTPUT
     int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
     snprintf(buf, 1024, "BVL: %d %d\n", MUTATION_ID, from);
@@ -718,7 +717,7 @@ RetType MutationManager::process_T_arith_goodvar(OpType left, OpType right,
     return f(op, left, right);
   }
    */
-  default: {
+  default: {  // NORMAL / SKIP
 #ifdef DEBUG_OUTPUT
     int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
     snprintf(buf, 1024, "RUN: %d %d\n", MUTATION_ID, from);

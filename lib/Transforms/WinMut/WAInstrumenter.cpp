@@ -17,13 +17,18 @@
 #include <signal.h>
 #include <unistd.h>
 
+#include <llvm/Support/Debug.h>
+
 # define OUTPUT
 
 using namespace llvm;
 
-WAInstrumenter::WAInstrumenter(bool useWindowAnalysis, bool optimizedInstrumentation) : ModulePass(ID), useWindowAnalysis(useWindowAnalysis), optimizedInstrumentation(optimizedInstrumentation) {}
+WAInstrumenter::WAInstrumenter(bool useWindowAnalysis, bool optimizedInstrumentation) : 
+ModulePass(ID), useWindowAnalysis(useWindowAnalysis), optimizedInstrumentation(optimizedInstrumentation) {}
 
+// 加中间层，做类型匹配
 void WAInstrumenter::initialTypes() {
+  DEBUG_WITH_TYPE("flow", dbgs() << "\n\tWAInstrumenter::initialTypes\n");
   auto i1 = IntegerType::get(TheModule->getContext(), 1);
   auto i8 = IntegerType::get(TheModule->getContext(), 8);
   auto i32 = IntegerType::get(TheModule->getContext(), 32);
@@ -79,7 +84,7 @@ void WAInstrumenter::initialTypes() {
   typeMapping["GoodvarArg"] = goodvarargTy;
 
   goodvarargInBlockTy->setBody(
-      {i32, ArrayType::get(PointerType::get(goodvarargTy, 0), 1)});
+    {i32, ArrayType::get(PointerType::get(goodvarargTy, 0), 1)});
   typeMapping["GoodvarArgInBlock"] = goodvarargInBlockTy;
 
   // registerFuncTy
@@ -142,7 +147,14 @@ void WAInstrumenter::initialTypes() {
                         false);
 }
 
+/**
+ * @brief 初始化函数定义
+ * 
+ * 使用在typeMapping中定义的定义来创建函数？
+ */
 void WAInstrumenter::initialFuncs() {
+  DEBUG_WITH_TYPE("flow", dbgs() << "\n\tWAInstrumenter::initialFuncs\n");
+  // def
   auto registerFuncTy = dyn_cast<FunctionType>(typeMapping["registerFuncTy"]);
   auto setMaxNumTy = dyn_cast<FunctionType>(typeMapping["setMaxNumTy"]);
   auto logFuncTy = dyn_cast<FunctionType>(typeMapping["logFuncTy"]);
@@ -169,6 +181,7 @@ void WAInstrumenter::initialFuncs() {
   auto prepareStorei64FuncTy =
       dyn_cast<FunctionType>(typeMapping["prepareStorei64FuncTy"]);
   auto tablePushFuncTy = dyn_cast<FunctionType>(typeMapping["tablePushFuncTy"]);
+  // use
   std::vector<std::pair<std::string, FunctionType *>> toCreate{
       {"__accmut__register", registerFuncTy},
       {"__accmut__set_max_num", setMaxNumTy},
@@ -197,14 +210,20 @@ void WAInstrumenter::initialFuncs() {
       {"__accmut__process_i64_cmp_GoodVar_init", goodvari64i32FuncTy},
   };
 
+  unsigned created = 0;
   for (auto &p : toCreate) {
     auto F = TheModule->getFunction(p.first);
     if (F == nullptr) {
+      DEBUG_WITH_TYPE("flow", dbgs() << "\t\t Create: " << p.first << "\n");
       F = Function::Create(p.second, GlobalValue::ExternalLinkage, p.first,
-                           TheModule);
+                          TheModule);
+      ++created;
     }
     funcMapping[p.first] = F;
   }
+  DEBUG_WITH_TYPE("flow", 
+                  dbgs() << "\t\t Created: " 
+                  << created << "/" << toCreate.size() << "\n");
 }
 
 StructType *WAInstrumenter::buildBlockBoundType(int length) {
@@ -245,13 +264,16 @@ StructType *WAInstrumenter::buildGoodvarArgInBlockType(int length) {
     Type *i32 = typeMapping["i32"];
     gvArgInBlockTy = StructType::create(
         TheModule->getContext(),
-        {i32, ArrayType::get(PointerType::get(typeMapping["GoodvarArg"], 0),
-                             length)},
+        {
+          i32,
+          ArrayType::get(PointerType::get(typeMapping["GoodvarArg"], 0), length)
+        },
         name);
   }
   return gvArgInBlockTy;
 }
 
+// 如果紧挨就合并
 std::list<std::pair<int, int>>
 WAInstrumenter::collapseGVSpec(const std::list<std::pair<int, int>> &gvspec) {
   if (gvspec.size() <= 1)
@@ -405,6 +427,19 @@ void WAInstrumenter::buildMutDepSpecsGV(std::list<std::pair<int, int>> gvspec,
   }
 }
 
+
+/**
+ * @brief build gv & constgv.
+ * 
+ * - gv in blockBoundGVs
+ * - corresponding constgv can be find by constBlockBoundGVs[gv]
+ * 
+ * @param gvspec 
+ * @param exactBound 
+ * @param left 
+ * @param right 
+ * @return GlobalVariable* 
+ */
 GlobalVariable *
 WAInstrumenter::buildBlockBoundGV(const std::list<std::pair<int, int>> &gvspec,
                                   bool exactBound, int left, int right) {
@@ -420,8 +455,10 @@ WAInstrumenter::buildBlockBoundGV(const std::list<std::pair<int, int>> &gvspec,
   if (mergedGVSpec.empty()) {
     assert(false);
     exit(-1);
-  } else if (mergedGVSpec.size() == 1 && left == mergedGVSpec.front().first &&
-             right == mergedGVSpec.back().second) {
+  } 
+  else if (mergedGVSpec.size() == 1 
+           && left  == mergedGVSpec.front().first 
+           && right == mergedGVSpec.back().second) {
     auto ty = dyn_cast<StructType>(typeMapping["BlockRegMutBound"]);
     auto init = dyn_cast<ConstantStruct>(
         ConstantStruct::get(ty, {getI32Constant(left), getI32Constant(right)}));
@@ -434,7 +471,8 @@ WAInstrumenter::buildBlockBoundGV(const std::list<std::pair<int, int>> &gvspec,
     blockBoundGVs.push_back(gv);
     constBlockBoundGVs[gv] = constgv;
     return gv;
-  } else {
+  } 
+  else {
     auto len = right - left + 1;
     auto ty = buildBlockBoundType(len);
     std::vector<Constant *> vec(len, num0);
@@ -611,19 +649,22 @@ DuplicatedBlockResult
 WAInstrumenter::duplicateBlock(BasicBlock *BB,
                                std::vector<ValueToValueMapTy> &vmapList) {
   int num = vmapList.size();
+  // 在BB前插入的phiguardBB（suffix: ".phiguard"）
   auto phiguardBB =
       BasicBlock::Create(BB->getContext(), "", BB->getParent(), BB);
   if (BB->hasName())
     phiguardBB->setName(BB->getName() + ".phiguard");
-
+  // 在BB后插入的succBB（suffix: ".succ"）
   auto succBB = BasicBlock::Create(BB->getContext(), "", BB->getParent(),
                                    BB->getNextNode());
   if (BB->hasName())
     succBB->setName(BB->getName() + ".succ");
 
+  // 修改控制流
   BB->replaceSuccessorsPhiUsesWith(succBB);
   BB->replaceAllUsesWith(phiguardBB);
 
+  // 将BB中的PHINode移入phiguardBB中
   for (auto it = BB->begin(); it != BB->end();) {
     auto cur_it = &*it;
     it++;
@@ -632,31 +673,37 @@ WAInstrumenter::duplicateBlock(BasicBlock *BB,
       phiguardBB->getInstList().push_back(phi);
     }
   }
-
+  // 将BB中的Terminator移入succBB中
   auto terminator = BB->getTerminator();
   terminator->removeFromParent();
   succBB->getInstList().push_back(terminator);
 
+  // 在BB后插入IR的IRBuilder
   IRBuilder<> irbuilder(BB);
-  irbuilder.CreateBr(succBB);
+  irbuilder.CreateBr(succBB);   // The final instruction is br
 
   auto duplicateOne = [&vmapList](BasicBlock *BB1, int idx) {
     // BB1 have no phi node
     // The final instruction is br
     // no block use now
 
+
+    // 在传入的BB1后插入的collectBB（suffix: ".collect"）
     auto collectBB = BasicBlock::Create(BB1->getContext(), "", BB1->getParent(),
                                         BB1->getNextNode());
     if (BB1->hasName())
       collectBB->setName(BB1->getName() + ".collect." + std::to_string(idx));
-    BB1->replaceSuccessorsPhiUsesWith(collectBB);
 
+    // 修改控制流
+    BB1->replaceSuccessorsPhiUsesWith(collectBB);
     auto terminator = BB1->getTerminator();
     terminator->removeFromParent();
     collectBB->getInstList().push_back(terminator);
-    IRBuilder<> irbuilder(BB1);
-    irbuilder.CreateBr(collectBB);
 
+    IRBuilder<> irbuilder(BB1);
+    irbuilder.CreateBr(collectBB);  // The final instruction is br
+
+    // Value和弱引用的映射
     ValueToValueMapTy &vmap = vmapList[idx];
     auto clonedBB =
         llvm::CloneBasicBlock(BB1, vmap, ".cloned." + std::to_string(idx));
@@ -665,6 +712,7 @@ WAInstrumenter::duplicateBlock(BasicBlock *BB,
     irbuilder.SetInsertPoint(collectBB, collectBB->begin());
     for (auto it = BB1->begin(); it != BB1->end(); ++it) {
       auto inst = &*it;
+      // 替换BB1外对该inst的使用
       auto clonedInst = dyn_cast<Instruction>(vmap[inst]);
       inst->replaceUsesOutsideBlock(clonedInst, BB1);
       if (clonedInst->isUsedOutsideOfBlock(clonedBB)) {
@@ -696,7 +744,7 @@ SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
   ret.goodOnlyVmapIdx = -1;
   ret.badOnlyVmapIdx = -1;
 
-  std::vector<Instruction *> goodInst;
+  std::vector<Instruction *> goodInst;  // 涉及goodVar，且含有变异
   std::vector<Instruction *> badInst;
   std::list<std::pair<int, int>> goodSpec;
   std::list<std::pair<int, int>> badSpec;
@@ -722,7 +770,8 @@ SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
       totSpec.emplace_back(tmp.front()->id, tmp.back()->id);
     }
   }
-
+  
+  // BB中的inst不能有变异体
   auto checkBB = [&](BasicBlock *bb) {
     for (auto &inst : *bb) {
       if (instMutsMap.count(&inst) == 1) {
@@ -733,8 +782,8 @@ SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
   };
 
   IRBuilder<> irbuilder(BB);
-  if (goodInst.empty() && badInst.empty()) {
-    // noBB
+  if (goodInst.empty() && badInst.empty()) {    // noBB
+    
     ret.fullBB = nullptr;
     ret.badOnlyBB = nullptr;
     ret.goodOnlyBB = nullptr;
@@ -888,22 +937,39 @@ SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
       selectGuard->setName(BB->getName() + ".guard.select");
     }
 
+    // phiguard后跳转到zeroGuard
     irbuilder.SetInsertPoint(phiguard);
     irbuilder.CreateBr(zeroGuard);
 
-    irbuilder.SetInsertPoint(zeroGuard);
-
+    // 填充zeroGuard
+    // zeroGuard:
+    //      mutationIdLocal = load HOLDER[0][0]
+    //      notzero = icmpne mutationIdLocal, 0
+    //      br notzero, rangeGuard, BB
+    irbuilder.SetInsertPoint(zeroGuard);    
+    
+    // HOLDER的首地址
     auto mutationIdLocal =
         irbuilder.CreateLoad(getMutationIDConstant(true), "mutid.local");
+    // 判定HOLER的首地址有效（非零）
     auto notzero =
         irbuilder.CreateICmpNE(mutationIdLocal, getI32Constant(0), "notzero");
+    // br notzero, rangeGuard, BB
     irbuilder.CreateCondBr(
         notzero, rangeGuard, BB,
         MDNode::get(zeroGuard->getContext(),
-                    {MDString::get(zeroGuard->getContext(), "branch_weights"),
-                     ConstantAsMetadata::get(getI32Constant(2000)),
-                     ConstantAsMetadata::get(getI32Constant(4))}));
+                    {
+                        MDString::get(zeroGuard->getContext(), "branch_weights"),
+                        ConstantAsMetadata::get(getI32Constant(2000)),  // jump to rangeGuard
+                        ConstantAsMetadata::get(getI32Constant(4))      // jump to BB
+                    }
+                   )
+    );
 
+    // 填充rangeGuard
+    // orcmp = (mutationIdLocal <= totSpec.front().first) 
+    //        || (mutationIdLocal >= totSpec.front().second)
+    // br orcmp clonedBB, selectGuard
     irbuilder.SetInsertPoint(rangeGuard);
 
     totSpec = collapseGVSpec(totSpec);
@@ -918,8 +984,9 @@ SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
 
     auto right = getI32Constant(totSpec.front().second);
     auto cmp2 = irbuilder.CreateICmpSGT(mutationIdLocal, right);
-    auto orcmp = irbuilder.CreateOr(cmp1, cmp2, "or");
 
+    auto orcmp = irbuilder.CreateOr(cmp1, cmp2, "or");
+    
     irbuilder.CreateCondBr(
         orcmp, clonedBB, selectGuard,
         MDNode::get(rangeGuard->getContext(),
@@ -931,7 +998,7 @@ SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
     badSpec = collapseGVSpec(badSpec);
     irbuilder.SetInsertPoint(selectGuard);
 
-    if (goodSpec.size() == 1) {
+    if (goodSpec.size() == 1) { // 指令全涉及goodVar
       auto leftg = getI32Constant(goodSpec.front().first);
       auto cmp1g = irbuilder.CreateICmpSLT(mutationIdLocal, leftg);
       auto rightg = getI32Constant(goodSpec.front().second);
@@ -955,7 +1022,13 @@ SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
         assert(false);
         exit(-1);
       } else {
-
+        // 填充selectGuard
+        // selectGuard:
+        //      sub = mutationIdLocal - totSpec.front().first
+        //      gep = gv[0], gv[2], gv[sub]
+        //      ok = load gep
+        //      cmp = icmpeq ok, 1
+        //      br cmp goodOnlyBB, badOnlyBB
         auto sub = irbuilder.CreateSub(mutationIdLocal,
                                        getI32Constant(totSpec.front().first));
         auto gep = irbuilder.CreateInBoundsGEP(
@@ -976,7 +1049,8 @@ SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
 }
 
 bool WAInstrumenter::readInMuts() {
-
+  DEBUG_WITH_TYPE("flow", dbgs() << "\n\tWAInstrumenter::readInMuts\n");
+  DEBUG_WITH_TYPE("flow", dbgs() << "\t\tRead muts from: " << TheModule->getName() + ".mut\n");
   MutUtil::getAllMutations(TheModule->getName());
 
   vector<Mutation *> &AllMutsVec = MutUtil::AllMutsVec;
@@ -1078,10 +1152,11 @@ bool WAInstrumenter::readInMuts() {
 }
 
 bool WAInstrumenter::runOnModule(Module &M) {
-  errs() << "WAInstrumenter::runOnModule: " << M.getName() <<"\n";
+  errs() << "\nWAInstrumenter::runOnModule: " << M.getName() <<"\n";
   TheModule = &M;
   name = M.getName();
 
+  // statFile：
   statFile = fopen((name + ".stat").c_str(), "w");
   initialTypes();
   initialFuncs();
@@ -1120,6 +1195,7 @@ bool WAInstrumenter::runOnModule(Module &M) {
 }
 
 bool WAInstrumenter::runOnFunction(Function &F) {
+  DEBUG_WITH_TYPE("flow", dbgs() << "\n\tWAInstrumenter::runOnFunction @ " << F.getName() << "\n");  
   if (F.getName().startswith("__accmut__")) {
     return false;
   }
@@ -1130,6 +1206,7 @@ bool WAInstrumenter::runOnFunction(Function &F) {
     }
   }
 
+  // all muts for Function F
   vector<Mutation *> *v = MutUtil::AllMutsMap[F.getName()];
 
   if (v == nullptr || v->empty()) {
@@ -1172,10 +1249,10 @@ bool WAInstrumenter::runOnFunction(Function &F) {
           params.push_back(getI64Constant(numOfGoodVar));
           params.push_back(getI64Constant(numOfMutants));
           CallInst::Create(funcMapping["__accmut__GoodVar_TablePush"], params,
-                           "", splitted.goodOnlyBB->getFirstNonPHI());
+                            "", splitted.goodOnlyBB->getFirstNonPHI());
           for (auto *BB : blocks) {
             CallInst::Create(funcMapping["__accmut__GoodVar_TablePop"], "",
-                             BB->getTerminator());
+                              BB->getTerminator());
           }
         }
         instrumentMulti(splitted.fullBB, splitted.vmap,
@@ -1195,12 +1272,12 @@ bool WAInstrumenter::runOnFunction(Function &F) {
       }
       if (!goodVariables.empty()) {
         CallInst::Create(funcMapping["__accmut__GoodVar_TablePush_max"], "",
-                         BB.getFirstNonPHI());
+                          BB.getFirstNonPHI());
         std::vector<Value *> params;
         params.push_back(getI64Constant(numOfGoodVar));
         params.push_back(getI64Constant(numOfMutants));
         CallInst::Create(funcMapping["__accmut__GoodVar_TablePop"], "",
-                         BB.getTerminator());
+                          BB.getTerminator());
       }
       auto mapping = std::vector<ValueToValueMapTy>{};
       instrumentMulti(&BB, mapping, -1, -1);
@@ -1259,7 +1336,7 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
                                      int good_idx, int bad_idx) {
   bool aboutGoodVariables = false;
   int good_from = -1, good_to = -1;
-  Instruction *first_goodvar_inst = nullptr;
+  Instruction *first_goodvar_inst = nullptr;    // 操作数或者值是goodvar的指令
 #ifdef OUTPUT
   bool should_exit = false;
 #endif
@@ -1271,20 +1348,21 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
   int numOfBadVar = 0;
 
   for (auto &I : *BB) {
-    if (instMutsMap.count(&I) == 1) {
-      if (goodVariables.count(&I) == 1 || hasUsedPreviousGoodVariables(&I)) {
+    if (instMutsMap.count(&I) == 1) { // 无错的Inst-Mut映射（每条指令出现一次）
+        if (goodVariables.count(&I) == 1            // 在goodVariables中出现的指令
+            || hasUsedPreviousGoodVariables(&I)) {  //或使用了之前的goodVariables
         auto &muts = instMutsMap[&I];
         mutSpecList.emplace_back(muts.front()->id, muts.back()->id);
         int left_id = getGoodVarId(I.getOperand(0));
         int right_id = getGoodVarId(I.getOperand(1));
         int ret_id = getGoodVarId(&I);
         mutIDList.emplace_back(left_id, right_id, ret_id);
-        if (ret_id == 0)
+        if (ret_id == 0)    // ret_id（即计算结果）不在goodVariables中（即不是只在本BB中使用），fork
           ++numOfGoodVarForking;
-        else
+        else                // 否则作为多值变量缓存
           ++numOfGoodVarCaching;
         if (!muts.empty()) {
-          if (good_from == -1) {
+          if (good_from == -1) {    // 第一次进入的时候，good_from还未改变，记录
             good_from = muts.front()->id;
             good_to = muts.back()->id;
           } else {
@@ -1309,12 +1387,13 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
             numOfBadVar);
   }
 
+  // 创建全局变量  
   if (!mutSpecList.empty()) {
     buildMutSpecsGV(mutSpecList);
     buildMutDepSpecsGV(mutSpecList, mutIDList);
 
-    std::vector<GlobalVariable *> gvs;
-    for (auto &I : *BB) {
+    std::vector<GlobalVariable *> gvs; // 对goodvararg创建的全局变量
+    for (auto &I : *BB) { // 创建全局变量
       if (goodVariables.count(&I) == 1 || hasUsedPreviousGoodVariables(&I)) {
         if (instMutsMap.count(&I) == 1) {
           auto &muts = instMutsMap[&I];
@@ -1331,6 +1410,7 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
       }
     }
 
+    // 全局变量的vector的初始化
     Type *eleTy = PointerType::get(typeMapping["GoodvarArg"], 0);
     ArrayType *ty = ArrayType::get(eleTy, gvs.size());
     std::vector<Constant *> initvec;
@@ -1340,6 +1420,7 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
     Constant *initarr = ConstantArray::get(ty, initvec);
 
     auto gvtype = buildGoodvarArgInBlockType(gvs.size());
+    // GoodvarArgInBlock的全局变量
     auto gvsgv = new GlobalVariable(
         *TheModule, gvtype, true,
         llvm::GlobalVariable::LinkageTypes::InternalLinkage,
@@ -1389,7 +1470,7 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
       }
     }
   }
-
+// 为什么要逆序
   for (auto it = BB->rbegin(), end = BB->rend(); it != end;) {
     // errs() << it.getNodePtr() << "---" << it->getPrevNode() << "\n";
     // errs() << "\n---F---" << *BB.getParent() << "---F---\n";
@@ -1426,6 +1507,7 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
           }*/
           auto inst = dyn_cast<Instruction>(mappings[good_idx][&I]);
           assert(inst);
+          // 通过mappings做指令映射
           instrumentAboutGoodVariable(*inst, mut_from, mut_to, good_from,
                                       good_to, &I == first_goodvar_inst,
                                       left_id, right_id, ret_id);
@@ -1462,7 +1544,7 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
 }
 
 void WAInstrumenter::instrumentAboutGoodVariable(Instruction &I, int mut_from,
-                                                 int mut_to, int good_from,
+                                                  int mut_to, int good_from,
                                                  int good_to, bool is_first,
                                                  int left_id, int right_id,
                                                  int ret_id) {
@@ -1931,6 +2013,7 @@ void WAInstrumenter::instrumentArithInst(Instruction *cur_it, int mut_from,
                                            APInt(32, StringRef(ss.str()), 10));
     int_call_params.push_back(to_i32);
   }
+  
   int_call_params.push_back(cur_it->getOperand(0));
   int_call_params.push_back(cur_it->getOperand(1));
 
@@ -1941,7 +2024,7 @@ void WAInstrumenter::instrumentArithInst(Instruction *cur_it, int mut_from,
     BasicBlock *cur_bb = cur_it->getParent();
     BasicBlock *original = cur_bb->splitBasicBlock(cur_it, "goodvar.orig");
 
-    cur_bb->back().eraseFromParent();
+    cur_bb->back().eraseFromParent(); // 删除增加的跳转
     IRBuilder<> irBuilder(cur_bb);
     auto *statusptr = irBuilder.CreateInBoundsGEP(
         arggv, {getI32Constant(0), getI32Constant(0)});
@@ -2033,24 +2116,39 @@ void WAInstrumenter::instrumentCmpInst(Instruction *cur_it, int mut_from,
 
     cur_bb->back().eraseFromParent();
     IRBuilder<> irBuilder(cur_bb);
+    // cur_bb:
+    //      statusptr = getelementer arggv, 0, 0
+    //      load = load statusptr
+    //      runorig = icmp eq load, 2
+    //      br runorig original, goodvar
     auto *statusptr = irBuilder.CreateInBoundsGEP(
         arggv, {getI32Constant(0), getI32Constant(0)});
     auto *load = irBuilder.CreateLoad(statusptr);
     auto *runorig = irBuilder.CreateICmpEQ(load, getI32Constant(2));
+
     auto b = original->begin();
     ++b;
+    // original:
+    //      cur_it
+    
     BasicBlock *end = original->splitBasicBlock(b, "goodvar.end");
     BasicBlock *goodvar = BasicBlock::Create(
         TheModule->getContext(), "goodvar.inst", cur_bb->getParent(), end);
     irBuilder.CreateCondBr(runorig, original, goodvar);
 
     irBuilder.SetInsertPoint(goodvar);
+    // goodvar: 
+    //      call = call f_process(int_call_params)
+    //      trunc call to i1
+    //      br end
     auto *call = irBuilder.CreateCall(f_process, int_call_params);
     auto *i32_conv = irBuilder.CreateTrunc(
         call, IntegerType::get(TheModule->getContext(), 1));
     irBuilder.CreateBr(end);
 
     irBuilder.SetInsertPoint(&*end->begin());
+    // end:
+    //      phi
     auto *phi = irBuilder.CreatePHI(i32_conv->getType(), 2);
     original->begin()->replaceUsesOutsideBlock(phi, original);
     phi->addIncoming(&*(original->begin()), original);
@@ -2062,6 +2160,7 @@ void WAInstrumenter::instrumentCmpInst(Instruction *cur_it, int mut_from,
     CallInst *call = CallInst::Create(f_process, int_call_params, "", &*cur_it);
     CastInst *i32_conv =
         new TruncInst(call, IntegerType::get(TheModule->getContext(), 1), "");
+    // ？？？为什么要截断
     ReplaceInstWithInst(&*cur_it, i32_conv);
   }
 }
@@ -2107,6 +2206,8 @@ void WAInstrumenter::instrumentInst(Instruction &I, bool aboutGoodVariable,
   }
 }
 
+// Create Instruction - Muts map
+// 每条指令对应的变异
 void WAInstrumenter::getInstMutsMap(vector<Mutation *> *v, Function &F) {
   instMutsMap.clear();
 
@@ -2127,7 +2228,7 @@ void WAInstrumenter::getInstMutsMap(vector<Mutation *> *v, Function &F) {
 void WAInstrumenter::getGoodVariables(BasicBlock &BB) {
   goodVariables.clear();
 
-  int goodVariableCount = 0;
+  int goodVariableCount = 0;  //既是计数，也是id
 
   for (auto I = BB.rbegin(), E = BB.rend(); I != E; ++I) {
     if (!isSupportedInstruction(&*I) || I->isUsedOutsideOfBlock(&BB)) {
@@ -2136,12 +2237,14 @@ void WAInstrumenter::getGoodVariables(BasicBlock &BB) {
 
     bool checkUser = true;
 
-    for (User *U : I->users()) {
-      if (Instruction *userInst = dyn_cast<Instruction>(U)) {
+    for (User *U : I->users()) { // 必在本块中
+      if (Instruction *userInst = dyn_cast<Instruction>(U)) { //保证本块中的使用者的？？？
         if ( // goodVariables.count(userInst) == 0/
             !isSupportedBoolInstruction(userInst) &&
             !isSupportedInstruction(userInst)) {
           checkUser = false;
+          errs() << *I << "\n";
+          // assert(false && "Why we check user?");
           break;
         }
       } else {
@@ -2202,10 +2305,13 @@ void WAInstrumenter::filterRealGoodVariables() {
     ++it;
 
     if (instMutsMap.count(I) == 0 && !hasUsedPreviousGoodVariables(I)) {
+      errs() << *I << "\n";
+      assert(hasUsedPreviousGoodVariables(I) && "Why cannot be uesd");
       erased.push_back(goodVariables[I]);
       goodVariables.erase(I);
     }
   }
+
   if (goodVariables.size() == 1)
     goodVariables.clear();
 
@@ -2248,7 +2354,7 @@ void WAInstrumenter::filterRealGoodVariables() {
   }
 
 #ifdef OUTPUT
-  llvm::errs() << "GVC1: " << goodVariables.size() << "\n";
+  llvm::errs() << "GVC: " << goodVariables.size() << "\n";
 #endif
 }
 
@@ -2311,6 +2417,7 @@ ConstantInt *WAInstrumenter::getI1Constant(bool value) {
                           APInt(1, value ? "1" : "0", 10));
 }
 
+// 支持：整形二元运算、整形比较
 bool WAInstrumenter::isSupportedOpcode(Instruction *I) {
   unsigned opcode = I->getOpcode();
   return (Instruction::isBinaryOp(opcode) &&
@@ -2325,6 +2432,8 @@ bool WAInstrumenter::isSupportedOp(Instruction *I) {
   return isSupportedOpcode(I) && isSupportedType(I->getOperand(1));
 }
 
+// SupportedInst: 
+// 支持：整形二元运算、整形比较
 bool WAInstrumenter::isSupportedInstruction(Instruction *I) {
   return isSupportedType(I) && isSupportedOp(I);
 }
