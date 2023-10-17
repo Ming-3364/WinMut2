@@ -1453,18 +1453,21 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
           }
 
           auto arg = dyn_cast<ConstantStruct>(ConstantStruct::get(
-              dyn_cast<StructType>(typeMapping["GoodvarArg"]),
-              {getI32Constant(0), getI32Constant(from), getI32Constant(to),
-               getI32Constant(from), getI32Constant(to),
-               getI32Constant(good_from), getI32Constant(good_to),
-               getI32Constant(ret_id), getI32Constant(left_id),
-               getI32Constant(right_id), getI32Constant(op),
-               ConstantExpr::getPointerCast(mutSpecsGVs[to], mutspecsPtrTy),
-               dep, notdep,
-               ConstantExpr::getPointerCast(
-                   gvsgv,
-                   PointerType::get(typeMapping["GoodvarArgInBlock"], 0)),
-               rmigv}));
+                dyn_cast<StructType>(typeMapping["GoodvarArg"]),
+                {
+                    getI32Constant(0), /* status */
+                    getI32Constant(from), getI32Constant(to),
+                    getI32Constant(from), getI32Constant(to),
+                    getI32Constant(good_from), getI32Constant(good_to),
+                    getI32Constant(ret_id), getI32Constant(left_id),
+                    getI32Constant(right_id), getI32Constant(op),
+                    ConstantExpr::getPointerCast(mutSpecsGVs[to], mutspecsPtrTy),
+                    dep, notdep,
+                    ConstantExpr::getPointerCast(
+                        gvsgv,
+                        PointerType::get(typeMapping["GoodvarArgInBlock"], 0)),
+                    rmigv
+                }));
           arggv->setInitializer(arg);
         }
       }
@@ -1498,7 +1501,7 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
         int left_id = getGoodVarId(I.getOperand(0));
         int right_id = getGoodVarId(I.getOperand(1));
         int ret_id = getGoodVarId(&I);
-        if (good_idx != -1) {
+        if (good_idx != -1) {   // optimizedInstrumentation
           /*
           llvm::errs() << "FROM" << I << "\n";
           for (auto m : mappings[good_idx]) {
@@ -1518,7 +1521,7 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
                                     ret_id);
         aboutGoodVariables = true;
       } else {
-        if (bad_idx != -1) {
+        if (bad_idx != -1) {    // optimizedInstrumentation
           /*
           llvm::errs() << "FROM" << I << "\n";
           for (auto m : mappings[bad_idx]) {
@@ -2000,7 +2003,7 @@ void WAInstrumenter::instrumentArithInst(Instruction *cur_it, int mut_from,
   }
 
   std::vector<Value *> int_call_params;
-  if (!aboutGoodVariable) {
+  if (!aboutGoodVariable) { // 涉及非本地变量须另外添加参数
     int_call_params.push_back(rmigv);
     std::stringstream ss;
     ss << mut_from;
@@ -2026,22 +2029,36 @@ void WAInstrumenter::instrumentArithInst(Instruction *cur_it, int mut_from,
 
     cur_bb->back().eraseFromParent(); // 删除增加的跳转
     IRBuilder<> irBuilder(cur_bb);
+    // cur_bb:
+    //      statusptr = getelementer arggv, 0, 0
+    //      load = load statusptr
+    //      runorig = icmp eq load, 2
+    //      br runorig original, goodvar
     auto *statusptr = irBuilder.CreateInBoundsGEP(
         arggv, {getI32Constant(0), getI32Constant(0)});
     auto *load = irBuilder.CreateLoad(statusptr);
-    auto *runorig = irBuilder.CreateICmpEQ(load, getI32Constant(2));
+    // load = GoodvarArg->status (NORMAL, BADVARLIKE, SKIP, EXECUTE)
+    auto *runorig = irBuilder.CreateICmpEQ(load, getI32Constant(2));  // 2 = SKIP
     auto b = original->begin();
     ++b;
+    // original:
+    //      cur_it
     BasicBlock *end = original->splitBasicBlock(b, "goodvar.end");
     BasicBlock *goodvar = BasicBlock::Create(
         TheModule->getContext(), "goodvar.inst", cur_bb->getParent(), end);
     irBuilder.CreateCondBr(runorig, original, goodvar);
 
     irBuilder.SetInsertPoint(goodvar);
+    // goodvar: 
+    //      call = call f_process(int_call_params)
+    //      trunc call to i1
+    //      br end
     auto *call = irBuilder.CreateCall(f_process, int_call_params);
     irBuilder.CreateBr(end);
-
+    
     irBuilder.SetInsertPoint(&*end->begin());
+    // end:
+    //      phi
     auto *phi = irBuilder.CreatePHI(call->getType(), 2);
     original->begin()->replaceUsesOutsideBlock(phi, original);
     phi->addIncoming(&*(original->begin()), original);
@@ -2160,7 +2177,6 @@ void WAInstrumenter::instrumentCmpInst(Instruction *cur_it, int mut_from,
     CallInst *call = CallInst::Create(f_process, int_call_params, "", &*cur_it);
     CastInst *i32_conv =
         new TruncInst(call, IntegerType::get(TheModule->getContext(), 1), "");
-    // ？？？为什么要截断
     ReplaceInstWithInst(&*cur_it, i32_conv);
   }
 }

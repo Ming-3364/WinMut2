@@ -683,7 +683,7 @@ RetType MutationManager::process_T_arith_goodvar(OpType left, OpType right,
   char buf[1024];
 #endif
 
-switch (arg->status) {
+  switch (arg->status) {
   case EXECUTE: {
 #ifdef DEBUG_OUTPUT
     int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
@@ -694,7 +694,7 @@ switch (arg->status) {
     return process_T_calc_mutation(op, left, right, f, MUTATION_ID);
   }
 
-  case BADVARLIKE: {  // 在基本块外被使用，badvar，需分流
+  case BADVARLIKE: { // 在基本块外被使用，badvar，需分流
 #ifdef DEBUG_OUTPUT
     int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
     snprintf(buf, 1024, "BVL: %d %d\n", MUTATION_ID, from);
@@ -717,14 +717,14 @@ switch (arg->status) {
     return f(op, left, right);
   }
    */
-  default: {  // NORMAL / SKIP
+  default: { // NORMAL / SKIP
 #ifdef DEBUG_OUTPUT
     int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
     snprintf(buf, 1024, "RUN: %d %d\n", MUTATION_ID, from);
     write(fd, buf, strlen(buf));
     close(fd);
 #endif
-    if (MUTATION_ID != 0) {
+    if (MUTATION_ID != 0) { // 子进程
       if (unlikely(forked_active_set.size() == 0))
         return f(op, left, right);
       if (forked_active_set.front() >= from && forked_active_set.back() <= to) {
@@ -796,11 +796,11 @@ switch (arg->status) {
           process_T_calc_mutation(op, left, right, f, mut_id));
     }
 
-    if (ret_id == 0) {
+    if (ret_id == 0) {  // 有的指令涉及了goodvar，但是其值不是goodvar，涉及到goodvar的操作数需要做多值处理，其操作结果可以融合并分流
       if (recent_set.empty()) {
         arg->status = SKIP;
         return f(op, left, right);
-      }
+    }
 
 #ifdef CLOCK
       if (MUTATION_ID != 0) {
@@ -822,14 +822,14 @@ switch (arg->status) {
       close(fd);
       dump_spec(arg->specs);
 #endif
-      if (MUTATION_ID == 0)
+    if (MUTATION_ID == 0)
         divide_eqclass(f(op, left, right));
-      else {
+    else {
         divide_eqclass_goodvar(from, to, f(op, left, right));
-      }
-      if (eq_num == 1) {
-        return eq_class[0].value;
-      }
+    }
+    if (eq_num == 1) {
+    return eq_class[0].value;
+    }
 #ifdef DEBUG_OUTPUT
       dump_eq_class();
 #endif
@@ -865,7 +865,7 @@ switch (arg->status) {
         }
       }
       return ret;
-    } else {
+    } else {    // 指令涉及goodvar，且操作结果也是goodvar，将操作结果作为多值变量处理
 
 #ifdef CLOCK
       if (MUTATION_ID != 0) {
