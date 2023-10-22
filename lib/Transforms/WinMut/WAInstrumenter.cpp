@@ -1574,8 +1574,9 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
       }
       instMutsMap.erase(&I);
 
-    } else {
+    } else {  // 限定了使用了goodVariables的指令中一定含有变异？？？
       if (goodVariables.count(&I) == 1 || hasUsedPreviousGoodVariables(&I)) {
+        errs() << I << "\n";
         assert(false);
       }
     }
@@ -2282,21 +2283,28 @@ void WAInstrumenter::getGoodVariables(BasicBlock &BB) {
   goodVariables.clear();
 
   int goodVariableCount = 0;  //既是计数，也是id
-
+  DEBUG_WITH_TYPE("GoodVariables", 
+      dbgs() << "\n### WAInstrumenter::getGoodVariables ### : " << BB.getName() <<"\n");
   for (auto I = BB.rbegin(), E = BB.rend(); I != E; ++I) {
+    DEBUG_WITH_TYPE("GoodVariables", 
+      dbgs() << "\t" << *I << "\n");
     if (!isSupportedInstruction(&*I) || I->isUsedOutsideOfBlock(&BB)) {
       continue;
     }
 
     bool checkUser = true;
-
+    
     for (User *U : I->users()) { // 必在本块中
       if (Instruction *userInst = dyn_cast<Instruction>(U)) { //保证本块中的使用者的？？？
+        DEBUG_WITH_TYPE("GoodVariables", 
+            dbgs() << "\t\tUser: " << *U << "\n");
         if ( // goodVariables.count(userInst) == 0/
             !isSupportedBoolInstruction(userInst) &&
             !isSupportedInstruction(userInst)) {
           checkUser = false;
-          errs() << *I << "\n";
+           
+          DEBUG_WITH_TYPE("GoodVariables", 
+            dbgs() << "\t\t" << "check User false: " << *I << "\n\n");
           // assert(false && "Why we check user?");
           break;
         }
@@ -2311,7 +2319,15 @@ void WAInstrumenter::getGoodVariables(BasicBlock &BB) {
       goodVariables[&*I] = ++goodVariableCount;
     }
   }
-
+  DEBUG_WITH_TYPE(
+    "GoodVariables", 
+    {
+      dbgs() << "" << "goodVariables: " << goodVariables.size() << "\n";
+      for(auto& goodVariable: goodVariables){
+        dbgs() << "\t" << goodVariable.second << ": " << *goodVariable.first << "\n";
+      }
+    }
+  );
   // bool nb = false;
 
   /*
@@ -2352,14 +2368,42 @@ void WAInstrumenter::getGoodVariables(BasicBlock &BB) {
 
 void WAInstrumenter::filterRealGoodVariables() {
   std::vector<int> erased;
+  DEBUG_WITH_TYPE("GoodVariables", 
+      dbgs() << "\n### WAInstrumenter::filterRealGoodVariables ###" <<"\n");
   for (auto it = goodVariables.begin(), end = goodVariables.end(); it != end;) {
     // avoid iterator invalidation
     Instruction *I = it->first;
     ++it;
 
+    DEBUG_WITH_TYPE("GoodVariables", 
+      dbgs() << "\t" << *I << "\n");
+    
     if (instMutsMap.count(I) == 0 && !hasUsedPreviousGoodVariables(I)) {
-      errs() << *I << "\n";
-      assert(hasUsedPreviousGoodVariables(I) && "Why cannot be uesd");
+      dbgs() << "\t\t" << "erase: " << *I << "\n";
+      DEBUG_WITH_TYPE(
+        "GoodVariables", 
+        {
+          if(instMutsMap.count(I) == 0)
+            dbgs() << "\t\t" << "no muts" << "\n";
+          int flag = 0;
+          for (Use &U : I->operands()) {
+            if (Instruction *usedInst = dyn_cast<Instruction>(U.get())) {
+              if (goodVariables.count(usedInst) == 1) {
+                
+                dbgs() << "\t\t\t" << "usePreviousGoodVariable: " << usedInst->getName() << "\n";
+                flag = 1;
+                break;
+              }
+            }
+          }
+          if (flag)
+            dbgs() << "\t\t" << "usePreviousGoodVariable" << "\n";
+          else
+            dbgs() << "\t\t" << "not usePreviousGoodVariable" << "\n";
+          dbgs() << "\n";
+        }
+      );
+      // assert(hasUsedPreviousGoodVariables(I) && "Why cannot be uesd");
       erased.push_back(goodVariables[I]);
       goodVariables.erase(I);
     }
@@ -2409,6 +2453,15 @@ void WAInstrumenter::filterRealGoodVariables() {
 #ifdef OUTPUT
   llvm::errs() << "GVC: " << goodVariables.size() << "\n";
 #endif
+  DEBUG_WITH_TYPE(
+    "GoodVariables", 
+    {
+      dbgs() << "" << "goodVariables: " << goodVariables.size() << "\n";
+      for(auto& goodVariable: goodVariables){
+        dbgs() << "\t" << goodVariable.second << ": " << *goodVariable.first << "\n";
+      }
+    }
+  );
 }
 
 void WAInstrumenter::pushGoodVarIdInfo(vector<Value *> &params, Instruction *I,
@@ -2488,6 +2541,16 @@ bool WAInstrumenter::isSupportedOp(Instruction *I) {
 // SupportedInst: 
 // 支持：整形二元运算、整形比较
 bool WAInstrumenter::isSupportedInstruction(Instruction *I) {
+  DEBUG_WITH_TYPE(
+    "GoodVariables", 
+    {
+      if(!isSupportedType(I))
+        dbgs() << "\t\t" << "unsupported type: " << *I->getType() << "\n";
+      if(!isSupportedOp(I))
+        dbgs() << "\t\t" << "unsupported OP  : " << I->getOpcodeName() << "\n";
+      dbgs() << "\n";
+    }
+  );
   return isSupportedType(I) && isSupportedOp(I);
 }
 

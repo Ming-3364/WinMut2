@@ -14,7 +14,9 @@ bool NaiveSplitBlockPass::runOnModule(Module &M) {
     if (!f.isDeclaration()) {
       for (auto &bb : f) {
         auto *curbb = &bb;
-        while (curbb->size() > 15) {
+        // tmpCtrl：为了简化实验，可能会影响程序结果，需修改和考量。
+        // while (curbb->size() > 15) {
+        while (curbb->size() > 16) {
           ret = true;
           auto it = curbb->begin();
           for (int i = 0; i < 10; ++i) {

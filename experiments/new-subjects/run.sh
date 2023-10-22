@@ -96,7 +96,7 @@ case ${ALGO} in
 		export CFLAGS="-winmut -O2  ${CFLAGS}"
 		;;
 	WinMutNo)
-		export CFLAGS="-winmut -winmut-no-opt -O2 ${CFLAGS}"
+		export CFLAGS="-winmut -winmut-no-opt -O2 -mllvm -debug-only=flow,GoodVariables${CFLAGS}"
 		;;
 	validate)
 		export WINMUT_MEASURE_COUNT=2
