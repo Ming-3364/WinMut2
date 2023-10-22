@@ -34,11 +34,20 @@
 **要素：直接运算还是call运行时库（WinMut）**  
 通过在插入时创建基本块解决  [添加控制流](lib/Transforms/WinMut/WAInstrumenter.cpp#L2032)  
 
-- 判据：全局变量GoodvarArg->status（在运行时被改变，改了之后再fork，从而影响子进程）
-- 影响点：处理时进行修改  [修改GoodvarArg->status](include/llvm/WinMutRuntime/mutations/MutationManager.h#L732)
+winmut中一共实现了3级：
 
-### 判断是否需要融合分流
+1. 函数级
 
-**要素：是否分流**  
-在运行时库中解决  
-判据：
+   - 判据：mutid != 0 && (mutid < left || mutid > right) [函数级](lib/Transforms/WinMut/WAInstrumenter.cpp#L646)
+
+2. 基本块级
+3. 指令级（仅涉及goodvar）
+
+   - 判据：全局变量GoodvarArg->status（在运行时被改变，改了之后再fork，从而影响子进程）
+   - 影响点：处理时进行修改  [修改GoodvarArg->status](include/llvm/WinMutRuntime/mutations/MutationManager.h#L732)
+
+### 判断是否需要融合分流 
+
+## 说明
+
+- 使用tmpCtrl标识临时控制变更，仅用作梳理流程时的控制工具。

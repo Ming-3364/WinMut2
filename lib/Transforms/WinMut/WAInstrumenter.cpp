@@ -24,7 +24,11 @@
 using namespace llvm;
 
 WAInstrumenter::WAInstrumenter(bool useWindowAnalysis, bool optimizedInstrumentation) : 
-ModulePass(ID), useWindowAnalysis(useWindowAnalysis), optimizedInstrumentation(optimizedInstrumentation) {}
+ModulePass(ID), useWindowAnalysis(useWindowAnalysis), optimizedInstrumentation(optimizedInstrumentation) {
+  DEBUG_WITH_TYPE("flow", dbgs() << "\nWAInstrumenter::WAInstrumenter\n");
+  DEBUG_WITH_TYPE("flow", dbgs() << "\tuseWindowAnalysis:        " << useWindowAnalysis << "\n");
+  DEBUG_WITH_TYPE("flow", dbgs() << "\toptimizedInstrumentation: " << optimizedInstrumentation << "\n");
+}
 
 // 加中间层，做类型匹配
 void WAInstrumenter::initialTypes() {
@@ -435,9 +439,9 @@ void WAInstrumenter::buildMutDepSpecsGV(std::list<std::pair<int, int>> gvspec,
  * - corresponding constgv can be find by constBlockBoundGVs[gv]
  * 
  * @param gvspec 
- * @param exactBound 
- * @param left 
- * @param right 
+ * @param exactBound 默认为true
+ * @param left 默认为-1
+ * @param right 默认为-1
  * @return GlobalVariable* 
  */
 GlobalVariable *
@@ -564,6 +568,14 @@ Constant *WAInstrumenter::getMutationIDConstant(bool isLocal) {
   return ret;
 }
 
+/**
+ * @brief cloneFunctionBlocks
+ * 
+ * @param F 要执行变异分析的函数
+ * @param left F对应的所有变异的起始id
+ * @param right F对应的所有变异的结束id
+ * @return std::vector<BasicBlock *> 
+ */
 std::vector<BasicBlock *>
 WAInstrumenter::cloneFunctionBlocks(Function *F, int left, int right) {
   std::vector<BasicBlock *> ret;
@@ -614,7 +626,7 @@ WAInstrumenter::cloneFunctionBlocks(Function *F, int left, int right) {
   //          ArrayRef<Constant *>({getI32Constant(0), getI32Constant(2)})),
   //      "rmioff");
 
-  auto gv = buildBlockBoundGV({{left, right}});
+  auto gv = buildBlockBoundGV({{left, right}}); 
 
   auto leftLoad = irbuilder.CreateLoad(
       ConstantExpr::getInBoundsGetElementPtr(
@@ -631,6 +643,8 @@ WAInstrumenter::cloneFunctionBlocks(Function *F, int left, int right) {
   auto cmp2 = irbuilder.CreateICmpSGT(mutationId, rightLoad);
   auto orcmp = irbuilder.CreateOr(cmp1, cmp2, "or");
   auto andcmp = irbuilder.CreateAnd(orcmp, notzero, "and");
+  // %and = and i1 %or, %notzero  ; mutid != 0 && (mutid < left || mutid > right)
+  // br i1 %and, label %entry.mirror, label %entry.phiguard, !prof !2
 
   /*irbuilder.CreateCall(
       funcMapping["__accmut__log"],
@@ -739,6 +753,26 @@ WAInstrumenter::duplicateBlock(BasicBlock *BB,
   // for (auto )
 }
 
+// - goodInst.empty() && badInst.empty()
+      // ret.fullBB = nullptr;
+      // ret.badOnlyBB = nullptr;
+      // ret.goodOnlyBB = nullptr;
+      // ret.noBB = BB;
+// - goodInst.empty()
+      // ret.fullBB = BB;
+      // ret.badOnlyBB = nullptr;
+      // ret.goodOnlyBB = nullptr;
+      // ret.noBB = clonedBB;
+// - badInst.empty()
+      // ret.fullBB = BB;
+      // ret.badOnlyBB = nullptr;
+      // ret.goodOnlyBB = goodOnlyBB;
+      // ret.noBB = clonedBB;
+// - else
+      // ret.fullBB = BB;
+      // ret.badOnlyBB = badOnlyBB;
+      // ret.goodOnlyBB = goodOnlyBB;
+      // ret.noBB = clonedBB;
 SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
   SplittedBlocks ret;
   ret.goodOnlyVmapIdx = -1;
@@ -771,7 +805,7 @@ SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
     }
   }
   
-  // BB中的inst不能有变异体
+  // checkBB：不允许BB中有变异体
   auto checkBB = [&](BasicBlock *bb) {
     for (auto &inst : *bb) {
       if (instMutsMap.count(&inst) == 1) {
@@ -788,7 +822,7 @@ SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
     ret.badOnlyBB = nullptr;
     ret.goodOnlyBB = nullptr;
     ret.noBB = BB;
-  } else if (goodInst.empty()) {
+  } else if (goodInst.empty()) {  // 没有涉及goodvar的指令
     ret.vmap = std::vector<ValueToValueMapTy>(1);
     auto dup = duplicateBlock(BB, ret.vmap);
     auto clonedBB = dup.duplicated[0];
@@ -1051,7 +1085,9 @@ SplittedBlocks WAInstrumenter::splitBasicBlock(BasicBlock *BB) {
 bool WAInstrumenter::readInMuts() {
   DEBUG_WITH_TYPE("flow", dbgs() << "\n\tWAInstrumenter::readInMuts\n");
   DEBUG_WITH_TYPE("flow", dbgs() << "\t\tRead muts from: " << TheModule->getName() + ".mut\n");
-  MutUtil::getAllMutations(TheModule->getName());
+  // tmpCtrl!!!
+  // MutUtil::getAllMutations(TheModule->getName());
+  MutUtil::getAllMutations(TheModule->getName().str() + ".tmpCtrl");
 
   vector<Mutation *> &AllMutsVec = MutUtil::AllMutsVec;
 
@@ -1236,7 +1272,8 @@ bool WAInstrumenter::runOnFunction(Function &F) {
 
       /// split here
       auto splitted = splitBasicBlock(BB);
-
+      DEBUG_WITH_TYPE("flow", dbgs() << "\tgoodOnlyVmapIdx: " << splitted.goodOnlyVmapIdx <<"\n");
+      DEBUG_WITH_TYPE("flow", dbgs() << "\tbadOnlyVmapIdx:  " << splitted.badOnlyVmapIdx <<"\n");
       if (splitted.fullBB) {
         if (splitted.goodOnlyBB) {
           std::vector<BasicBlock *> blocks;
