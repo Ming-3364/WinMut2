@@ -1,25 +1,40 @@
 # WinMut源码解析
 
+## 延伸
+
+- 实现对c源代码中对应的局部变量的融合
+- 针对变异分析，提前进行基本块重构
+- 探索保持变分执行的收益上限
+
 ## TODO
 
 - [ ] 全局变量的作用
+  - [ ] Mutation mutarray[]
+  - [ ] RegMutInfo mutrmi
+  - [ ] MutSpecsxxx mutSpecsGV.xxx
+  - [ ] MutSpecsxxx mutSpecsDepGV.xxx
+  - [ ] MutSpecsxxx mutSpecsNoDepGV.xxx
   - [ ] GoodvarArg
-  - [ ] GoodvarArgInBlock_
-- [ ] optimizedInstrumentation的作用
+  - [ ] GoodvarArgInBlock
+  - [ ] BlockRegMutBound BlockBoundArray
+  - [ ] GoodvarArg* GoodvarArgArray[]
+
 - [ ] 判断是否需要解释
   - [x] HasMutant
   - [x] IsOriginal
     - [x] 如何区分子进程和原始进程
   - [ ] IsRedundant
+
 - [ ] 判断是否需要融合分流
-  - [ ] get & filter: 找到不在本BB外使用的goodvar，保存为多值变量
+  - [x] get & filter: 找到不在本BB外使用的goodvar，保存为多值变量
   - [ ] 处理多值变量参与运算的情况（变分执行）
     - [ ] 创建运行环境：多值变量存储
-    - [ ] 运行时      ：多值变量参与运算
+    - [ ] 运行时     ：多值变量参与运算
+      - [ ] __accmut__process_i32_arith_GoodVar_init (needInit没有在任何地方被使用，所以init和普通的版本完全一致)
+      - [ ] __accmut__process_i32_arith_GoodVar [process_Goodvar](include/llvm/WinMutRuntime/mutations/MutationManager.h#L671)
+      - [ ] __accmut__process_i32_arith [process](include/llvm/WinMutRuntime/mutations/MutationManager.h#L590)
       - [ ] 多值变量作为操作数
       - [ ] 多值变量作为结果
-- [ ] 通过查看对IR的修改明确流程
-- [ ] 真正实现对c源代码中对应的局部变量的融合
 
 ## 抽象
 

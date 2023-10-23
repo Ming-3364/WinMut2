@@ -670,256 +670,272 @@ RetType MutationManager::process_T_arith(RegMutInfo *rmi, int from, int to,
 template <typename OpType, class RetType, bool needInit, CalcType calcType>
 RetType MutationManager::process_T_arith_goodvar(OpType left, OpType right,
                                                  GoodvarArg *arg) {
-  typedef RetType CalcFuncType(int, OpType, OpType);
+    typedef RetType CalcFuncType(int, OpType, OpType);
 
-  CalcFuncType *f = CalcFunc<OpType, RetType, calcType>::funcPointer;
+    CalcFuncType *f = CalcFunc<OpType, RetType, calcType>::funcPointer;
 
-  if (unlikely(system_disabled() || !system_initialized()))
-    return f(arg->op, left, right);
-  int from = arg->from;
-  int to = arg->to;
-  int op = arg->op;
+    if (unlikely(system_disabled() || !system_initialized()))
+        return f(arg->op, left, right);
+    int from = arg->from;
+    int to = arg->to;
+    int op = arg->op;
 #ifdef DEBUG_OUTPUT
-  char buf[1024];
-#endif
-
-  switch (arg->status) {
-  case EXECUTE: {
-#ifdef DEBUG_OUTPUT
-    int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
-    snprintf(buf, 1024, "EXECUTE: %d %d\n", MUTATION_ID, from);
-    write(fd, buf, strlen(buf));
-    close(fd);
-#endif
-    return process_T_calc_mutation(op, left, right, f, MUTATION_ID);
-  }
-
-  case BADVARLIKE: { // 在基本块外被使用，badvar，需分流
-#ifdef DEBUG_OUTPUT
-    int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
-    snprintf(buf, 1024, "BVL: %d %d\n", MUTATION_ID, from);
-    write(fd, buf, strlen(buf));
-    close(fd);
-#endif
-    return process_T_arith(arg->rmi, arg->from_local, arg->to_local, left,
-                           right, op, f);
-  }
-  /*
-  case SKIP: {
-      write(STDERR_FILENO, "= =\n", 4);
-      raise(SIGSTOP);
-#ifdef DEBUG_OUTPUT
-    int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
-    snprintf(buf, 1024, "SKIP: %d %d\n", MUTATION_ID, from);
-    write(fd, buf, strlen(buf));
-    close(fd);
-#endif
-    return f(op, left, right);
-  }
-   */
-  default: { // NORMAL / SKIP
-#ifdef DEBUG_OUTPUT
-    int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
-    snprintf(buf, 1024, "RUN: %d %d\n", MUTATION_ID, from);
-    write(fd, buf, strlen(buf));
-    close(fd);
-#endif
-    if (MUTATION_ID != 0) { // 子进程
-      if (unlikely(forked_active_set.size() == 0))
-        return f(op, left, right);
-      if (forked_active_set.front() >= from && forked_active_set.back() <= to) {
-        for (int i = 0; i < arg->inblock->len; ++i) {
-          arg->inblock->goodvarArgs[i]->status = SKIP;
-        }
-        arg->status = BADVARLIKE;
-#ifdef DEBUG_OUTPUT
-        int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
-        write(fd, "BBVVLL\n", 7);
-        close(fd);
-#endif
-        return process_T_arith(arg->rmi, arg->from_local, arg->to_local, left,
-                               right, op, f);
-      }
-    }
-    // #define CLOCK
-    using namespace std::chrono;
-#ifdef CLOCK
-    auto start = high_resolution_clock::now();
-#endif
-    int goodvar_from = arg->good_from;
-    int goodvar_to = arg->good_to;
-
-    if (unlikely(MUTATION_ID != 0) &&
-        unlikely(MUTATION_ID > goodvar_to || MUTATION_ID < goodvar_from)) {
-      return f(op, left, right);
-    }
-
-    int ret_id = arg->ret_id;
-
-    recent_set.clear();
-    temp_result.clear();
-// #define BUGGY
-#ifndef BUGGY
-    if (MUTATION_ID != 0 && ret_id == 0) {
-      process_T_calc_goodvar_for_badvar_and_forked(
-          op, left, right, f, arg->left_id, arg->right_id, from);
-    } else {
-#endif
-      process_T_calc_goodvar(op, left, right, f, arg->left_id, arg->right_id);
-#ifndef BUGGY
-    }
-#endif
-#undef BUGGY
-    filter_variant_goodvar(from, to);
-
-    /*
     char buf[1024];
-    snprintf(buf, 1024, "%d %ld %d %d %d\n", MUTATION_ID, recent_set.size(),
-             arg->left_id, arg->right_id, arg->ret_id);
-    write(STDERR_FILENO, buf, strlen(buf));
-     */
-
-#ifdef CLOCK
-    if (MUTATION_ID != 0) {
-      auto end = high_resolution_clock::now();
-      char buf[1024];
-      snprintf(buf, 1024, "??: %ld %ld\n",
-               duration_cast<nanoseconds>(end - start).count(),
-               recent_set.size());
-      write(STDERR_FILENO, buf, strlen(buf));
-      start = high_resolution_clock::now();
-    }
 #endif
-    for (auto i = temp_result.size(); i != recent_set.size(); ++i) {
-      int mut_id = recent_set[i];
-      temp_result.push_back(
-          process_T_calc_mutation(op, left, right, f, mut_id));
-    }
-
-    if (ret_id == 0) {  // 有的指令涉及了goodvar，但是其值不是goodvar，涉及到goodvar的操作数需要做多值处理，其操作结果可以融合并分流
-      if (recent_set.empty()) {
-        arg->status = SKIP;
-        return f(op, left, right);
-    }
-
-#ifdef CLOCK
-      if (MUTATION_ID != 0) {
-        auto end = high_resolution_clock::now();
-        char buf[1024];
-        snprintf(buf, 1024, "11: %ld %ld\n",
-                 duration_cast<nanoseconds>(end - start).count(),
-                 recent_set.size());
-        write(STDERR_FILENO, buf, strlen(buf));
-        start = high_resolution_clock::now();
-      }
-#endif
-#ifdef DEBUG_OUTPUT
-      char buf[1024];
-      snprintf(buf, 1024, "id: %d %d %d\n", arg->left_id, arg->right_id,
-               ret_id);
-      int fd = open("eq_class", O_APPEND | O_CREAT | O_WRONLY, 0644);
-      write(fd, buf, strlen(buf));
-      close(fd);
-      dump_spec(arg->specs);
-#endif
-    if (MUTATION_ID == 0)
-        divide_eqclass(f(op, left, right));
-    else {
-        divide_eqclass_goodvar(from, to, f(op, left, right));
-    }
-    if (eq_num == 1) {
-    return eq_class[0].value;
-    }
-#ifdef DEBUG_OUTPUT
-      dump_eq_class();
-#endif
-
-#ifdef CLOCK
-      if (MUTATION_ID != 0) {
-        auto end = high_resolution_clock::now();
-        char buf[1024];
-        snprintf(buf, 1024, "1: %ld %ld\n",
-                 duration_cast<nanoseconds>(end - start).count(),
-                 recent_set.size());
-        write(STDERR_FILENO, buf, strlen(buf));
-      }
-#endif
-      auto ret = (RetType)fork_eqclass(arg->rmi->moduleName,
-      // goodvar_get_mutant_spec()
-#ifdef BUGGY
-                                       arg->specs,
-#else
-                                       arg->dep,
-#endif
-                                       arg->rmi->offset);
-      if (MUTATION_ID != 0) {
-        if (forked_active_set.size() == 1) {
-          for (int i = 0; i < arg->inblock->len; ++i) {
-            auto x = arg->inblock->goodvarArgs[i];
-            if (x->from <= MUTATION_ID && x->to >= MUTATION_ID) {
-              arg->inblock->goodvarArgs[i]->status = EXECUTE;
-            } else {
-              arg->inblock->goodvarArgs[i]->status = SKIP;
-            }
-          }
+    // NORMAL       0
+    // BADVARLIKE   1
+    // SKIP         2
+    // EXECUTE      3
+    switch (arg->status) {
+        case EXECUTE: {
+            #ifdef DEBUG_OUTPUT
+                int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
+                snprintf(buf, 1024, "EXECUTE: %d %d\n", MUTATION_ID, from);
+                write(fd, buf, strlen(buf));
+                close(fd);
+            #endif
+            return process_T_calc_mutation(op, left, right, f, MUTATION_ID);
         }
-      }
-      return ret;
-    } else {    // 指令涉及goodvar，且操作结果也是goodvar，将操作结果作为多值变量处理
 
-#ifdef CLOCK
-      if (MUTATION_ID != 0) {
-        auto end = high_resolution_clock::now();
-        char buf[1024];
-        snprintf(buf, 1024, "22: %d %d %d %d %d %ld %ld\n", MUTATION_ID, from,
-                 to, goodvar_from, goodvar_to,
-                 duration_cast<nanoseconds>(end - start).count(),
-                 recent_set.size());
-        write(STDERR_FILENO, buf, strlen(buf));
-        start = high_resolution_clock::now();
-      }
-#endif
-      GoodVarTableType &ret_goodvar = get_goodvar_table()[ret_id];
-      ret_goodvar.clear();
+        case BADVARLIKE: { // 在基本块外被使用，badvar，需分流
+        #ifdef DEBUG_OUTPUT
+            int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
+            snprintf(buf, 1024, "BVL: %d %d\n", MUTATION_ID, from);
+            write(fd, buf, strlen(buf));
+            close(fd);
+        #endif
+            return process_T_arith(arg->rmi, arg->from_local, arg->to_local, left,
+                                right, op, f);
+        }
+        /*
+        case SKIP: {
+            write(STDERR_FILENO, "= =\n", 4);
+            raise(SIGSTOP);
+        #ifdef DEBUG_OUTPUT
+            int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
+            snprintf(buf, 1024, "SKIP: %d %d\n", MUTATION_ID, from);
+            write(fd, buf, strlen(buf));
+            close(fd);
+        #endif
+            return f(op, left, right);
+        }
+        */
+        default: { // NORMAL / SKIP
+            #ifdef DEBUG_OUTPUT
+                int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
+                snprintf(buf, 1024, "RUN: %d %d\n", MUTATION_ID, from);
+                write(fd, buf, strlen(buf));
+                close(fd);
+            #endif
 
-      if (recent_set.empty()) {
-        arg->status = SKIP;
-        return f(op, left, right);
-      }
+            if (MUTATION_ID != 0) { // 子进程
+                if (unlikely(forked_active_set.size() == 0))
+                    return f(op, left, right);
+                if (forked_active_set.front() >= from && forked_active_set.back() <= to) {
+                    for (int i = 0; i < arg->inblock->len; ++i) {
+                        arg->inblock->goodvarArgs[i]->status = SKIP;
+                    }
+                    arg->status = BADVARLIKE;
 
-      for (size_t i = 0; i != recent_set.size(); ++i) {
-        ret_goodvar.push_back(std::make_pair(recent_set[i], temp_result[i]));
-      }
-#ifdef DEBUG_OUTPUT
-      char buf[1024];
-      snprintf(buf, 1024, "id: %d %d %d\n", arg->left_id, arg->right_id,
-               ret_id);
-      int fd = open("eq_class", O_APPEND | O_CREAT | O_WRONLY, 0644);
-      write(fd, buf, strlen(buf));
-      write(fd, "goodvar table:\n", strlen("goodvar table:\n"));
-      for (auto &x : ret_goodvar) {
-        snprintf(buf, 1024, "%d:%ld ", x.first, x.second);
-        write(fd, buf, strlen(buf));
-      }
-      write(fd, "\n", 1);
-      close(fd);
-#endif
+                    #ifdef DEBUG_OUTPUT
+                        int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
+                        write(fd, "BBVVLL\n", 7);
+                        close(fd);
+                    #endif
 
-#ifdef CLOCK
-      if (MUTATION_ID != 0) {
-        auto end = high_resolution_clock::now();
-        char buf[1024];
-        snprintf(buf, 1024, "2: %ld %ld\n",
-                 duration_cast<nanoseconds>(end - start).count(),
-                 ret_goodvar.size());
-        write(STDERR_FILENO, buf, strlen(buf));
-      }
-#endif
+                    return process_T_arith(arg->rmi, arg->from_local, arg->to_local, 
+                                           left, right, op, f);
+                }
+            }
+            
+            // #define CLOCK
+            using namespace std::chrono;
+            #ifdef CLOCK
+                auto start = high_resolution_clock::now();
+            #endif
+            int goodvar_from = arg->good_from;
+            int goodvar_to = arg->good_to;
 
-      return f(op, left, right);
+            if (unlikely(MUTATION_ID != 0) 
+                && unlikely(MUTATION_ID > goodvar_to || MUTATION_ID < goodvar_from)) {
+                return f(op, left, right);
+            }
+
+            int ret_id = arg->ret_id;
+
+            recent_set.clear();
+            temp_result.clear();
+
+            // #define BUGGY
+            #ifndef BUGGY
+                if (MUTATION_ID != 0 && ret_id == 0) {
+                    process_T_calc_goodvar_for_badvar_and_forked(op, left, right, 
+                                                                 f, arg->left_id, arg->right_id, from);
+                } 
+                else {
+            #endif
+                    process_T_calc_goodvar(op, left, right, f, arg->left_id, arg->right_id);
+            #ifndef BUGGY
+                }
+            #endif
+            #undef BUGGY
+
+            filter_variant_goodvar(from, to);
+
+                /*
+                char buf[1024];
+                snprintf(buf, 1024, "%d %ld %d %d %d\n", MUTATION_ID, recent_set.size(),
+                        arg->left_id, arg->right_id, arg->ret_id);
+                write(STDERR_FILENO, buf, strlen(buf));
+                */
+
+            #ifdef CLOCK
+                if (MUTATION_ID != 0) {
+                auto end = high_resolution_clock::now();
+                char buf[1024];
+                snprintf(buf, 1024, "??: %ld %ld\n",
+                        duration_cast<nanoseconds>(end - start).count(),
+                        recent_set.size());
+                write(STDERR_FILENO, buf, strlen(buf));
+                start = high_resolution_clock::now();
+                }
+            #endif
+            
+            for (auto i = temp_result.size(); i != recent_set.size(); ++i) {
+                int mut_id = recent_set[i];
+                temp_result.push_back(process_T_calc_mutation(op, left, right, f, mut_id));
+            }
+
+            if (ret_id == 0) {  // 有的指令涉及了goodvar，但是其值不是goodvar，涉及到goodvar的操作数需要做多值处理，其操作结果可以融合并分流
+                if (recent_set.empty()) {
+                    arg->status = SKIP;
+                    return f(op, left, right);
+                }
+
+                #ifdef CLOCK
+                    if (MUTATION_ID != 0) {
+                        auto end = high_resolution_clock::now();
+                        char buf[1024];
+                        snprintf(buf, 1024, "11: %ld %ld\n",
+                                duration_cast<nanoseconds>(end - start).count(),
+                                recent_set.size());
+                        write(STDERR_FILENO, buf, strlen(buf));
+                        start = high_resolution_clock::now();
+                    }
+                #endif
+                #ifdef DEBUG_OUTPUT
+                    char buf[1024];
+                    snprintf(buf, 1024, "id: %d %d %d\n", arg->left_id, arg->right_id,
+                            ret_id);
+                    int fd = open("eq_class", O_APPEND | O_CREAT | O_WRONLY, 0644);
+                    write(fd, buf, strlen(buf));
+                    close(fd);
+                    dump_spec(arg->specs);
+                #endif
+
+                if (MUTATION_ID == 0)
+                    divide_eqclass(f(op, left, right));
+                else {
+                    divide_eqclass_goodvar(from, to, f(op, left, right));
+                }
+                if (eq_num == 1) {
+                    return eq_class[0].value;
+                }
+
+                #ifdef DEBUG_OUTPUT
+                    dump_eq_class();
+                #endif
+
+                #ifdef CLOCK
+                    if (MUTATION_ID != 0) {
+                        auto end = high_resolution_clock::now();
+                        char buf[1024];
+                        snprintf(buf, 1024, "1: %ld %ld\n",
+                                duration_cast<nanoseconds>(end - start).count(),
+                                recent_set.size());
+                        write(STDERR_FILENO, buf, strlen(buf));
+                    }
+                #endif
+
+                auto ret = (RetType)fork_eqclass(arg->rmi->moduleName,
+                // goodvar_get_mutant_spec()
+                            #ifdef BUGGY
+                                        arg->specs,
+                            #else
+                                        arg->dep,
+                            #endif
+                                        arg->rmi->offset);
+                if (MUTATION_ID != 0) {
+                    if (forked_active_set.size() == 1) {
+                        for (int i = 0; i < arg->inblock->len; ++i) {
+                            auto x = arg->inblock->goodvarArgs[i];
+                            if (x->from <= MUTATION_ID && x->to >= MUTATION_ID) {
+                                arg->inblock->goodvarArgs[i]->status = EXECUTE;
+                            } 
+                            else {
+                                arg->inblock->goodvarArgs[i]->status = SKIP;
+                            }
+                        }
+                    }
+                }
+                return ret;
+            }
+            else {    // 指令涉及goodvar，且操作结果也是goodvar，将操作结果作为多值变量处理
+                #ifdef CLOCK
+                    if (MUTATION_ID != 0) {
+                        auto end = high_resolution_clock::now();
+                        char buf[1024];
+                        snprintf(buf, 1024, "22: %d %d %d %d %d %ld %ld\n", MUTATION_ID, from,
+                                to, goodvar_from, goodvar_to,
+                                duration_cast<nanoseconds>(end - start).count(),
+                                recent_set.size());
+                        write(STDERR_FILENO, buf, strlen(buf));
+                        start = high_resolution_clock::now();
+                    }
+                #endif
+
+                GoodVarTableType &ret_goodvar = get_goodvar_table()[ret_id];
+                ret_goodvar.clear();
+
+                if (recent_set.empty()) {
+                    arg->status = SKIP;
+                    return f(op, left, right);
+                }
+
+                for (size_t i = 0; i != recent_set.size(); ++i) {
+                    ret_goodvar.push_back(std::make_pair(recent_set[i], temp_result[i]));
+                }
+
+                #ifdef DEBUG_OUTPUT
+                    char buf[1024];
+                    snprintf(buf, 1024, "id: %d %d %d\n", arg->left_id, arg->right_id,
+                            ret_id);
+                    int fd = open("eq_class", O_APPEND | O_CREAT | O_WRONLY, 0644);
+                    write(fd, buf, strlen(buf));
+                    write(fd, "goodvar table:\n", strlen("goodvar table:\n"));
+                    for (auto &x : ret_goodvar) {
+                        snprintf(buf, 1024, "%d:%ld ", x.first, x.second);
+                        write(fd, buf, strlen(buf));
+                    }
+                    write(fd, "\n", 1);
+                    close(fd);
+                #endif
+
+                #ifdef CLOCK
+                    if (MUTATION_ID != 0) {
+                        auto end = high_resolution_clock::now();
+                        char buf[1024];
+                        snprintf(buf, 1024, "2: %ld %ld\n",
+                                duration_cast<nanoseconds>(end - start).count(),
+                                ret_goodvar.size());
+                        write(STDERR_FILENO, buf, strlen(buf));
+                    }
+                #endif
+
+                return f(op, left, right);
+            }
+        }
     }
-  }
-  }
 }
 
 template <typename OpType, typename RetType>
@@ -928,82 +944,82 @@ MutationManager::process_T_calc_mutation(int op, OpType left, OpType right,
                                          RetType (*f)(int, OpType, OpType),
                                          int mut_id) {
 #ifdef DEBUG_OUTPUT
-  /*
-  int fd = open("eq_class", O_APPEND | O_WRONLY | O_CREAT, 0644);
-  char buf[1024];
-  snprintf(buf, 1024, "%d %ld %ld %d\n", op, (int64_t)left, (int64_t)right,
-           mut_id);
-  write(fd, buf, strlen(buf));
-  close(fd);
-   */
+    /*
+    int fd = open("eq_class", O_APPEND | O_WRONLY | O_CREAT, 0644);
+    char buf[1024];
+    snprintf(buf, 1024, "%d %ld %ld %d\n", op, (int64_t)left, (int64_t)right,
+            mut_id);
+    write(fd, buf, strlen(buf));
+    close(fd);
+    */
 #endif
-  if (mut_id == 0) {
-    return f(op, left, right);
-  }
-  Mutation m = all_mutation[mut_id];
-  switch (m.type) {
-  case LVR:
-    if (m.op_0 == 0) {
-      return f(op, (OpType)m.op_2, right);
-    } else if (m.op_0 == 1) {
-      return f(op, left, (OpType)m.op_2);
-    } else {
-      assert(false);
+    if (mut_id == 0) {
+        return f(op, left, right);
     }
-  case UOI: {
-    if (m.op_1 == 0) {
-      OpType u_left;
-      if (m.op_2 == 0) {
-        u_left = left + 1;
-      } else if (m.op_2 == 1) {
-        u_left = left - 1;
-      } else if (m.op_2 == 2) {
-        u_left = -left;
-      } else {
+    Mutation m = all_mutation[mut_id];
+    switch (m.type) {
+    case LVR:
+        if (m.op_0 == 0) {
+        return f(op, (OpType)m.op_2, right);
+        } else if (m.op_0 == 1) {
+        return f(op, left, (OpType)m.op_2);
+        } else {
         assert(false);
-      }
-      return f(op, u_left, right);
-    } else if (m.op_1 == 1) {
-      long u_right;
-      if (m.op_2 == 0) {
-        u_right = right + 1;
-      } else if (m.op_2 == 1) {
-        u_right = right - 1;
-      } else if (m.op_2 == 2) {
-        u_right = -right;
-      } else {
+        }
+    case UOI: {
+        if (m.op_1 == 0) {
+        OpType u_left;
+        if (m.op_2 == 0) {
+            u_left = left + 1;
+        } else if (m.op_2 == 1) {
+            u_left = left - 1;
+        } else if (m.op_2 == 2) {
+            u_left = -left;
+        } else {
+            assert(false);
+        }
+        return f(op, u_left, right);
+        } else if (m.op_1 == 1) {
+        long u_right;
+        if (m.op_2 == 0) {
+            u_right = right + 1;
+        } else if (m.op_2 == 1) {
+            u_right = right - 1;
+        } else if (m.op_2 == 2) {
+            u_right = -right;
+        } else {
+            assert(false);
+        }
+        return f(op, left, u_right);
+        } else {
         assert(false);
-      }
-      return f(op, left, u_right);
-    } else {
-      assert(false);
-    }
-  }
-
-  case ROV:
-    return f(op, right, left);
-
-  case ABV:
-    if (m.op_0 == 0) {
-      return f(op, abs(left), right);
-    } else if (m.op_0 == 1) {
-      return f(op, left, abs(right));
-    } else {
-      assert(false);
+        }
     }
 
-  case AOR:
-  case LOR:
-  case COR:
-  case SOR:
-    return f(m.op_0, left, right);
+    case ROV:
+        return f(op, right, left);
 
-  case ROR:
-    return f(static_cast<OpType>(m.op_2), left, right);
+    case ABV:
+        if (m.op_0 == 0) {
+        return f(op, abs(left), right);
+        } else if (m.op_0 == 1) {
+        return f(op, left, abs(right));
+        } else {
+        assert(false);
+        }
 
-  default:
-    assert(false);
-  }
+    case AOR:
+    case LOR:
+    case COR:
+    case SOR:
+        return f(m.op_0, left, right);
+
+    case ROR:
+        return f(static_cast<OpType>(m.op_2), left, right);
+
+    default:
+        assert(false);
+    }
 }
 #ifdef BUGGY
 template <typename OpType, typename RetType>

@@ -280,28 +280,28 @@ StructType *WAInstrumenter::buildGoodvarArgInBlockType(int length) {
 // 如果紧挨就合并
 std::list<std::pair<int, int>>
 WAInstrumenter::collapseGVSpec(const std::list<std::pair<int, int>> &gvspec) {
-  if (gvspec.size() <= 1)
-    return gvspec;
-  auto localSpec = gvspec;
-  localSpec.sort(
-      [](const std::pair<int, int> &p1, const std::pair<int, int> &p2) {
-        return p1.first < p2.first;
-      });
-  auto b1 = localSpec.begin();
-  auto b2 = localSpec.begin();
-  b2++;
-  while (b2 != localSpec.end()) {
-    auto &p1 = *b1;
-    auto &p2 = *b2;
-    if (p1.second + 1 >= p2.first) {
-      p1.second = p2.second;
-      b2 = localSpec.erase(b2);
-    } else {
-      b1++;
-      b2++;
+    if (gvspec.size() <= 1)
+        return gvspec;
+    auto localSpec = gvspec;
+    localSpec.sort(
+        [](const std::pair<int, int> &p1, const std::pair<int, int> &p2) {
+            return p1.first < p2.first;
+        });
+    auto b1 = localSpec.begin();
+    auto b2 = localSpec.begin();
+    b2++;
+    while (b2 != localSpec.end()) {
+        auto &p1 = *b1;
+        auto &p2 = *b2;
+        if (p1.second + 1 >= p2.first) {
+            p1.second = p2.second;
+            b2 = localSpec.erase(b2);
+        } else {
+            b1++;
+            b2++;
+        }
     }
-  }
-  return localSpec;
+    return localSpec;
 }
 
 std::list<std::pair<int, int>>
@@ -325,46 +325,47 @@ WAInstrumenter::mergeGVSpec(const std::list<std::pair<int, int>> &gvspec1,
 
 std::list<std::pair<int, int>> WAInstrumenter::complementaryGVSpec(
     const std::list<std::pair<int, int>> &all,
-    const std::list<std::pair<int, int>> &mask) {
-  std::list<std::pair<int, int>> ret;
-  auto itall = all.begin();
-  auto itmask = mask.begin();
-  while (itall != all.end()) {
-    if (itall->first == itmask->first) {
-      ++itall;
-      ++itmask;
-      continue;
+    const std::list<std::pair<int, int>> &mask) 
+{
+    std::list<std::pair<int, int>> ret;
+    auto itall = all.begin();
+    auto itmask = mask.begin();
+    while (itall != all.end()) {
+        if (itall->first == itmask->first) {
+        ++itall;
+        ++itmask;
+        continue;
+        }
+        ret.push_back(*itall);
+        ++itall;
     }
-    ret.push_back(*itall);
-    ++itall;
-  }
-  assert(itmask == mask.end());
-  return ret;
+    assert(itmask == mask.end());
+    return ret;
 }
 
 GlobalVariable *WAInstrumenter::getMutSpecsGVFromAllList(
-    int length, const std::list<std::pair<int, int>> &all) {
-  int totlength = all.size();
+    int length, const std::list<std::pair<int, int>> &all, string name) 
+{
+    int totlength = all.size();
 
-  auto *mutspecTy = cast<StructType>(this->typeMapping["MutSpec"]);
-  std::vector<Constant *> initvec;
+    auto *mutspecTy = cast<StructType>(this->typeMapping["MutSpec"]);
+    std::vector<Constant *> initvec;
 
-  for (auto &p : all) {
-    initvec.push_back(
-        ConstantStruct::get(mutspecTy, {this->getI32Constant(p.first),
-                                        this->getI32Constant(p.second)}));
-  }
-  Constant *initarr =
-      ConstantArray::get(ArrayType::get(mutspecTy, initvec.size()), initvec);
+    for (auto &p : all) {
+        initvec.push_back(
+            ConstantStruct::get(mutspecTy, {this->getI32Constant(p.first),
+                                            this->getI32Constant(p.second)}));
+    }
+    Constant *initarr =
+        ConstantArray::get(ArrayType::get(mutspecTy, initvec.size()), initvec);
 
-  auto *ty = this->buildMutSpecsType(initvec.size());
-  auto init =
-      ConstantStruct::get(ty, {this->getI32Constant(length),
-                               this->getI32Constant(totlength), initarr});
-  auto *gv = new GlobalVariable(
-      *this->TheModule, ty, false,
-      llvm::GlobalValue::LinkageTypes::InternalLinkage, init);
-  return gv;
+    auto *ty = this->buildMutSpecsType(initvec.size());
+    auto init =
+        ConstantStruct::get(ty, {this->getI32Constant(length),
+                                this->getI32Constant(totlength), initarr});
+    auto *gv = new GlobalVariable(*this->TheModule, ty, false,
+                                  llvm::GlobalValue::LinkageTypes::InternalLinkage, init, name);
+    return gv;
 }
 
 void WAInstrumenter::printMutSpecsGV(
@@ -375,60 +376,69 @@ void WAInstrumenter::printMutSpecsGV(
 }
 
 void WAInstrumenter::buildMutSpecsGV(std::list<std::pair<int, int>> gvspec) {
-  std::list<std::pair<int, int>> head;
-  std::list<std::pair<int, int>> tail;
-  while (!gvspec.empty()) {
-    head.push_back(gvspec.front());
-    gvspec.pop_front();
-    head = collapseGVSpec(head);
-    tail = collapseGVSpec(gvspec);
-    int length = head.size();
-    std::list<std::pair<int, int>> all = head;
-    for (auto &x : tail) {
-      all.push_back(x);
+    std::list<std::pair<int, int>> head;
+    std::list<std::pair<int, int>> tail;
+    while (!gvspec.empty()) {
+        head.push_back(gvspec.front());
+        gvspec.pop_front();
+        head = collapseGVSpec(head);
+        tail = collapseGVSpec(gvspec);
+        int length = head.size();
+        std::list<std::pair<int, int>> all = head;
+        for (auto &x : tail) {
+            all.push_back(x);
+        }
+        mutSpecsGVs[head.back().second] = getMutSpecsGVFromAllList(length, all, "mutSpecsGV");
+        DEBUG_WITH_TYPE(
+            "GoodVariables", 
+            {
+                dbgs() << "" << "mutSpecsGVs: " << mutSpecsGVs.size() << "\n";
+                for(auto& mutSpecsGV: mutSpecsGVs){
+                    dbgs() << "\t" << mutSpecsGV.first << ": " << mutSpecsGV.second->getName() << "\n";
+                }
+            }
+        );
     }
-    mutSpecsGVs[head.back().second] = getMutSpecsGVFromAllList(length, all);
-  }
 }
 
 void WAInstrumenter::buildMutDepSpecsGV(std::list<std::pair<int, int>> gvspec,
                                         std::list<IDTuple> idtuple) {
-  std::list<std::pair<int, int>> seen;
-  std::map<int, std::list<std::pair<int, int>>> dep;
-  std::map<int, std::list<std::pair<int, int>>> notdep;
-  std::map<int, std::pair<int, int>> idToMutPair;
-  auto specit = gvspec.begin();
-  auto idit = idtuple.begin();
+    std::list<std::pair<int, int>> seen;
+    std::map<int, std::list<std::pair<int, int>>> dep;
+    std::map<int, std::list<std::pair<int, int>>> notdep;
+    std::map<int, std::pair<int, int>> idToMutPair;
+    auto specit = gvspec.begin();
+    auto idit = idtuple.begin();
 
-  for (; specit != gvspec.end(); ++specit, ++idit) {
-    seen.push_back(*specit);
-    if (idit->ret_id != 0) {
-      idToMutPair[idit->ret_id] = *specit;
-      dep[idit->ret_id] = mergeGVSpec(dep[idit->left_id], dep[idit->right_id]);
-      dep[idit->ret_id].push_back(*specit);
-      notdep[idit->ret_id] = complementaryGVSpec(seen, dep[idit->ret_id]);
-    } else {
-      auto currdep = mergeGVSpec(dep[idit->left_id], dep[idit->right_id]);
-      currdep.push_back(*specit);
-      auto currnotdep = complementaryGVSpec(seen, currdep);
-      /*
-      llvm::errs() << "Building " << specit->second << "\n";
-      printMutSpecsGV(seen);
-      llvm::errs() << "\n";
-      printMutSpecsGV(currdep);
-      llvm::errs() << "\n";
-      printMutSpecsGV(currnotdep);
-      llvm::errs() << "\n";
-       */
-      currdep = collapseGVSpec(currdep);
-      currnotdep = collapseGVSpec(currnotdep);
+    for (; specit != gvspec.end(); ++specit, ++idit) {
+        seen.push_back(*specit);
+        if (idit->ret_id != 0) {
+            idToMutPair[idit->ret_id] = *specit;
+            dep[idit->ret_id] = mergeGVSpec(dep[idit->left_id], dep[idit->right_id]);
+            dep[idit->ret_id].push_back(*specit);
+            notdep[idit->ret_id] = complementaryGVSpec(seen, dep[idit->ret_id]);
+        } else {
+            auto currdep = mergeGVSpec(dep[idit->left_id], dep[idit->right_id]);
+            currdep.push_back(*specit);
+            auto currnotdep = complementaryGVSpec(seen, currdep);
+            /*
+            llvm::errs() << "Building " << specit->second << "\n";
+            printMutSpecsGV(seen);
+            llvm::errs() << "\n";
+            printMutSpecsGV(currdep);
+            llvm::errs() << "\n";
+            printMutSpecsGV(currnotdep);
+            llvm::errs() << "\n";
+            */
+            currdep = collapseGVSpec(currdep);
+            currnotdep = collapseGVSpec(currnotdep);
 
-      mutSpecsDepGVs[specit->second] =
-          getMutSpecsGVFromAllList(currdep.size(), currdep);
-      mutSpecsNoDepGVs[specit->second] =
-          getMutSpecsGVFromAllList(currnotdep.size(), currnotdep);
+            mutSpecsDepGVs[specit->second] =
+                getMutSpecsGVFromAllList(currdep.size(), currdep, "mutSpecsDepGV");
+            mutSpecsNoDepGVs[specit->second] =
+                getMutSpecsGVFromAllList(currnotdep.size(), currnotdep, "mutSpecsNoDepGV");
+        }
     }
-  }
 }
 
 
@@ -1368,149 +1378,177 @@ void WAInstrumenter::generateSetMaxCtor() {
   appendToGlobalCtors(*TheModule, func, 100);
 }
 
+// 以BB为单位插入
 bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
                                      std::vector<ValueToValueMapTy> &mappings,
                                      int good_idx, int bad_idx) {
-  bool aboutGoodVariables = false;
-  int good_from = -1, good_to = -1;
-  Instruction *first_goodvar_inst = nullptr;    // 操作数或者值是goodvar的指令
-#ifdef OUTPUT
-  bool should_exit = false;
-#endif
-  std::list<std::pair<int, int>> mutSpecList;
-  std::list<IDTuple> mutIDList;
+    DEBUG_WITH_TYPE("GoodVariables", 
+        dbgs() << "\n### WAInstrumenter::instrumentMulti ### : " << BB->getName() <<"\n");
+    
+    bool aboutGoodVariables = false;
+    int good_from = -1, good_to = -1;
+    Instruction *first_goodvar_inst = nullptr;    // 操作数或者值是goodvar的指令
+    #ifdef OUTPUT
+    bool should_exit = false;
+    #endif
+    std::list<std::pair<int, int>> mutSpecList;
+    std::list<IDTuple> mutIDList;
 
-  int numOfGoodVarCaching = 0;
-  int numOfGoodVarForking = 0;
-  int numOfBadVar = 0;
-
-  for (auto &I : *BB) {
-    if (instMutsMap.count(&I) == 1) { // 无错的Inst-Mut映射（每条指令出现一次）
-        if (goodVariables.count(&I) == 1            // 在goodVariables中出现的指令
-            || hasUsedPreviousGoodVariables(&I)) {  //或使用了之前的goodVariables
-        auto &muts = instMutsMap[&I];
-        mutSpecList.emplace_back(muts.front()->id, muts.back()->id);
-        int left_id = getGoodVarId(I.getOperand(0));
-        int right_id = getGoodVarId(I.getOperand(1));
-        int ret_id = getGoodVarId(&I);
-        mutIDList.emplace_back(left_id, right_id, ret_id);
-        if (ret_id == 0)    // ret_id（即计算结果）不在goodVariables中（即不是只在本BB中使用），fork
-          ++numOfGoodVarForking;
-        else                // 否则作为多值变量缓存
-          ++numOfGoodVarCaching;
-        if (!muts.empty()) {
-          if (good_from == -1) {    // 第一次进入的时候，good_from还未改变，记录
-            good_from = muts.front()->id;
-            good_to = muts.back()->id;
-          } else {
-#ifdef OUTPUT
-            if (muts.back()->id + 1 != good_from) {
-              should_exit = true;
-            }
-#endif
-            good_to = muts.back()->id;
-          }
-        }
-        if (!first_goodvar_inst)
-          first_goodvar_inst = &I;
-      } else {
-        ++numOfBadVar;
-      }
-    }
-  }
-
-  if (statFile) {
-    fprintf(statFile, "%d:%d:%d\n", numOfGoodVarCaching, numOfGoodVarForking,
-            numOfBadVar);
-  }
-
-  // 创建全局变量  
-  if (!mutSpecList.empty()) {
-    buildMutSpecsGV(mutSpecList);
-    buildMutDepSpecsGV(mutSpecList, mutIDList);
-
-    std::vector<GlobalVariable *> gvs; // 对goodvararg创建的全局变量
-    for (auto &I : *BB) { // 创建全局变量
-      if (goodVariables.count(&I) == 1 || hasUsedPreviousGoodVariables(&I)) {
-        if (instMutsMap.count(&I) == 1) {
-          auto &muts = instMutsMap[&I];
-          int from = muts.front()->id;
-          int to = muts.back()->id;
-          auto arggv = new GlobalVariable(
-              *TheModule, typeMapping["GoodvarArg"], false,
-              llvm::GlobalValue::LinkageTypes::InternalLinkage, nullptr,
-              "goodvararg_" + std::to_string(from) + "_" + std::to_string(to),
-              nullptr, llvm::GlobalValue::ThreadLocalMode::NotThreadLocal, 0);
-          goodvarargGVs[to] = arggv;
-          gvs.push_back(arggv);
-        }
-      }
-    }
-
-    // 全局变量的vector的初始化
-    Type *eleTy = PointerType::get(typeMapping["GoodvarArg"], 0);
-    ArrayType *ty = ArrayType::get(eleTy, gvs.size());
-    std::vector<Constant *> initvec;
-    for (auto *p : gvs) {
-      initvec.push_back(p);
-    }
-    Constant *initarr = ConstantArray::get(ty, initvec);
-
-    auto gvtype = buildGoodvarArgInBlockType(gvs.size());
-    // GoodvarArgInBlock的全局变量
-    auto gvsgv = new GlobalVariable(
-        *TheModule, gvtype, true,
-        llvm::GlobalVariable::LinkageTypes::InternalLinkage,
-        ConstantStruct::get(gvtype, {getI32Constant(gvs.size()), initarr}),
-        "GoodvarArgInBlock_" + std::to_string(good_from) + "_" +
-            std::to_string(good_to));
+    int numOfGoodVarCaching = 0;
+    int numOfGoodVarForking = 0;
+    int numOfBadVar = 0;
 
     for (auto &I : *BB) {
-      if (goodVariables.count(&I) == 1 || hasUsedPreviousGoodVariables(&I)) {
-        if (instMutsMap.count(&I) == 1) {
-          auto &muts = instMutsMap[&I];
-          int from = muts.front()->id;
-          int to = muts.back()->id;
-          auto arggv = goodvarargGVs[to];
-          int left_id = getGoodVarId(I.getOperand(0));
-          int right_id = getGoodVarId(I.getOperand(1));
-          int ret_id = getGoodVarId(&I);
-          int op = I.isBinaryOp() ? I.getOpcode()
-                                  : (int)dyn_cast<ICmpInst>(&I)->getPredicate();
-          auto *mutspecsPtrTy = PointerType::get(typeMapping["MutSpecs"], 0);
-          auto *dep =
-              dyn_cast<Constant>(ConstantPointerNull::get(mutspecsPtrTy));
-          auto *notdep =
-              dyn_cast<Constant>(ConstantPointerNull::get(mutspecsPtrTy));
-          if (ret_id == 0) {
-            dep =
-                ConstantExpr::getPointerCast(mutSpecsDepGVs[to], mutspecsPtrTy);
-            notdep = ConstantExpr::getPointerCast(mutSpecsNoDepGVs[to],
-                                                  mutspecsPtrTy);
-          }
+        if (instMutsMap.count(&I) == 1) { // 无错的Inst-Mut映射（每条指令出现一次）
+            if (goodVariables.count(&I) == 1 // 在goodVariables中出现的指令
+                || hasUsedPreviousGoodVariables(&I)) // 或使用了之前的goodVariables
+            {
+                auto &muts = instMutsMap[&I];
+                mutSpecList.emplace_back(muts.front()->id, muts.back()->id);
 
-          auto arg = dyn_cast<ConstantStruct>(ConstantStruct::get(
-                dyn_cast<StructType>(typeMapping["GoodvarArg"]),
-                {
-                    getI32Constant(0), /* status */
-                    getI32Constant(from), getI32Constant(to),
-                    getI32Constant(from), getI32Constant(to),
-                    getI32Constant(good_from), getI32Constant(good_to),
-                    getI32Constant(ret_id), getI32Constant(left_id),
-                    getI32Constant(right_id), getI32Constant(op),
-                    ConstantExpr::getPointerCast(mutSpecsGVs[to], mutspecsPtrTy),
-                    dep, notdep,
-                    ConstantExpr::getPointerCast(
-                        gvsgv,
-                        PointerType::get(typeMapping["GoodvarArgInBlock"], 0)),
-                    rmigv
-                }));
-          arggv->setInitializer(arg);
+                int left_id = getGoodVarId(I.getOperand(0));
+                int right_id = getGoodVarId(I.getOperand(1));
+                int ret_id = getGoodVarId(&I);
+                mutIDList.emplace_back(left_id, right_id, ret_id);
+
+                if (ret_id == 0) // ret_id（即计算结果）不在goodVariables中（即不是只在本BB中使用），fork
+                    ++numOfGoodVarForking;
+                else // 否则作为多值变量缓存
+                    ++numOfGoodVarCaching;
+
+                if (!muts.empty()) {
+                    if (good_from == -1) { // 第一次进入的时候，good_from还未改变，记录
+                        good_from = muts.front()->id;
+                        good_to = muts.back()->id;
+                    } else {
+#ifdef OUTPUT
+                        if (muts.back()->id + 1 != good_from) {
+                            should_exit = true;
+                        }
+#endif
+                        good_to = muts.back()->id;
+                    }
+                }
+                if (!first_goodvar_inst)
+                    first_goodvar_inst = &I;
+            } 
+            else {
+                ++numOfBadVar;
+            }
         }
-      }
     }
-  }
-// 为什么要逆序
+
+    if (statFile) {
+        fprintf(statFile, "%d:%d:%d\n", 
+                numOfGoodVarCaching, numOfGoodVarForking, numOfBadVar);
+    }
+    DEBUG_WITH_TYPE(
+        "GoodVariables", 
+        {
+            dbgs() << "\t" << "numOfGoodVarCaching: " << numOfGoodVarCaching << "\n"
+                   << "\t" << "numOfGoodVarForking: " << numOfGoodVarForking << "\n"
+                   << "\t" << "numOfBadVar        : " << numOfBadVar         << "\n";
+            dbgs() << "" << "mutSpecList: " << mutSpecList.size() << "\n";
+            for(auto& mutSpec: mutSpecList){
+                dbgs() << "\t" << mutSpec.first << "~" << mutSpec.second << "\n";
+            }
+            dbgs() << "" << "mutIDList: " << mutIDList.size() << "\n";
+            for(auto& mutID: mutIDList){
+                dbgs() << "\t" << "ret_id: " << mutID.ret_id
+                       << " " << "right_id: " << mutID.right_id
+                       << " " << "left_id: " << mutID.left_id
+                       << "\n";
+            }
+        }
+    );
+    // 创建全局变量  
+    if (!mutSpecList.empty()) {
+        buildMutSpecsGV(mutSpecList);
+        buildMutDepSpecsGV(mutSpecList, mutIDList);
+
+        std::vector<GlobalVariable *> gvs; // 对goodvararg创建的全局变量
+        for (auto &I : *BB) { // 创建全局变量
+            if (goodVariables.count(&I) == 1 || hasUsedPreviousGoodVariables(&I)) {
+                if (instMutsMap.count(&I) == 1) {
+                    auto &muts = instMutsMap[&I];
+                    int from = muts.front()->id;
+                    int to = muts.back()->id;
+                    auto arggv = new GlobalVariable(
+                        *TheModule, typeMapping["GoodvarArg"], false,
+                        llvm::GlobalValue::LinkageTypes::InternalLinkage, nullptr,
+                        "goodvararg_" + std::to_string(from) + "_" + std::to_string(to),
+                        nullptr, llvm::GlobalValue::ThreadLocalMode::NotThreadLocal, 0);
+                    goodvarargGVs[to] = arggv;
+                    gvs.push_back(arggv);
+                }
+            }
+        }
+
+        // 全局变量的vector的初始化
+        Type *eleTy = PointerType::get(typeMapping["GoodvarArg"], 0);
+        ArrayType *ty = ArrayType::get(eleTy, gvs.size());
+        std::vector<Constant *> initvec;
+        for (auto *p : gvs) {
+            initvec.push_back(p);
+        }
+        Constant *initarr = ConstantArray::get(ty, initvec);
+
+        auto gvtype = buildGoodvarArgInBlockType(gvs.size());
+        // GoodvarArgInBlock的全局变量
+        auto gvsgv = new GlobalVariable(
+            *TheModule, gvtype, true,
+            llvm::GlobalVariable::LinkageTypes::InternalLinkage,
+            ConstantStruct::get(gvtype, {getI32Constant(gvs.size()), initarr}),
+            "GoodvarArgInBlock_" + std::to_string(good_from) + "_" + std::to_string(good_to));
+
+        for (auto &I : *BB) {
+            if (goodVariables.count(&I) == 1 
+                || hasUsedPreviousGoodVariables(&I)) 
+            {
+                if (instMutsMap.count(&I) == 1) {
+                    auto &muts = instMutsMap[&I];
+                    int from = muts.front()->id;
+                    int to = muts.back()->id;
+                    auto arggv = goodvarargGVs[to];
+                    int left_id = getGoodVarId(I.getOperand(0));
+                    int right_id = getGoodVarId(I.getOperand(1));
+                    int ret_id = getGoodVarId(&I);
+                    int op = I.isBinaryOp() ? I.getOpcode()
+                                            : (int)dyn_cast<ICmpInst>(&I)->getPredicate();
+                    auto *mutspecsPtrTy = PointerType::get(typeMapping["MutSpecs"], 0);
+                    auto *dep =
+                        dyn_cast<Constant>(ConstantPointerNull::get(mutspecsPtrTy));
+                    auto *notdep =
+                        dyn_cast<Constant>(ConstantPointerNull::get(mutspecsPtrTy));
+                    if (ret_id == 0) {
+                        dep    =
+                            ConstantExpr::getPointerCast(mutSpecsDepGVs[to], mutspecsPtrTy);
+                        notdep = 
+                            ConstantExpr::getPointerCast(mutSpecsNoDepGVs[to], mutspecsPtrTy);
+                    }
+
+                    auto arg = dyn_cast<ConstantStruct>(ConstantStruct::get(
+                            dyn_cast<StructType>(typeMapping["GoodvarArg"]),
+                            {
+                                getI32Constant(0), /* status */
+                                getI32Constant(from), getI32Constant(to),
+                                getI32Constant(from), getI32Constant(to),
+                                getI32Constant(good_from), getI32Constant(good_to),
+                                getI32Constant(ret_id), getI32Constant(left_id),
+                                getI32Constant(right_id), getI32Constant(op),
+                                ConstantExpr::getPointerCast(mutSpecsGVs[to], mutspecsPtrTy),
+                                dep, notdep,
+                                ConstantExpr::getPointerCast(
+                                    gvsgv,
+                                    PointerType::get(typeMapping["GoodvarArgInBlock"], 0)),
+                                rmigv
+                            }));
+                    arggv->setInitializer(arg);
+                }
+            }
+        }
+    }
+    // 为什么要逆序
   for (auto it = BB->rbegin(), end = BB->rend(); it != end;) {
     // errs() << it.getNodePtr() << "---" << it->getPrevNode() << "\n";
     // errs() << "\n---F---" << *BB.getParent() << "---F---\n";
@@ -1521,64 +1559,66 @@ bool WAInstrumenter::instrumentMulti(BasicBlock *BB,
 
     auto cur_it = &I;
     if (instMutsMap.count(cur_it) == 1) {
-      vector<Mutation *> &tmp = instMutsMap[cur_it];
-      int mut_from, mut_to;
+        vector<Mutation *> &tmp = instMutsMap[cur_it];
+        int mut_from, mut_to;
 
-      mut_from = tmp.front()->id;
-      mut_to = tmp.back()->id;
+        mut_from = tmp.front()->id;
+        mut_to = tmp.back()->id;
 
-      if (tmp.size() >= MAX_MUT_NUM_PER_LOCATION) {
-        llvm::errs() << I << "\n";
-        llvm::errs() << tmp.size() << "\n";
-        assert(false);
-        exit(-1);
-      }
-
-      if (goodVariables.count(&I) == 1 || hasUsedPreviousGoodVariables(&I)) {
-        int left_id = getGoodVarId(I.getOperand(0));
-        int right_id = getGoodVarId(I.getOperand(1));
-        int ret_id = getGoodVarId(&I);
-        if (good_idx != -1) {   // optimizedInstrumentation
-          /*
-          llvm::errs() << "FROM" << I << "\n";
-          for (auto m : mappings[good_idx]) {
-            llvm::errs() << *m.first << " to ";
-            llvm::errs() << *m.second << "\n";
-          }*/
-          auto inst = dyn_cast<Instruction>(mappings[good_idx][&I]);
-          assert(inst);
-          // 通过mappings做指令映射
-          instrumentAboutGoodVariable(*inst, mut_from, mut_to, good_from,
-                                      good_to, &I == first_goodvar_inst,
-                                      left_id, right_id, ret_id);
+        if (tmp.size() >= MAX_MUT_NUM_PER_LOCATION) {
+            llvm::errs() << I << "\n";
+            llvm::errs() << tmp.size() << "\n";
+            assert(false);
+            exit(-1);
         }
-        // llvm::errs() << "TO" << I << "\n";
-        instrumentAboutGoodVariable(I, mut_from, mut_to, good_from, good_to,
-                                    &I == first_goodvar_inst, left_id, right_id,
-                                    ret_id);
-        aboutGoodVariables = true;
-      } else {
-        if (bad_idx != -1) {    // optimizedInstrumentation
-          /*
-          llvm::errs() << "FROM" << I << "\n";
-          for (auto m : mappings[bad_idx]) {
-            llvm::errs() << *m.first << " to ";
-            llvm::errs() << *m.second << "\n";
-          }*/
-          auto inst = dyn_cast<Instruction>(mappings[bad_idx][&I]);
-          assert(inst);
-          instrumentAsDMA(*inst, mut_from, mut_to);
-        }
-        // llvm::errs() << "TO" << I << "\n";
-        instrumentAsDMA(I, mut_from, mut_to);
-      }
-      instMutsMap.erase(&I);
 
-    } else {  // 限定了使用了goodVariables的指令中一定含有变异？？？
-      if (goodVariables.count(&I) == 1 || hasUsedPreviousGoodVariables(&I)) {
-        errs() << I << "\n";
-        assert(false);
-      }
+        if (goodVariables.count(&I) == 1 || hasUsedPreviousGoodVariables(&I)) {
+            int left_id  = getGoodVarId(I.getOperand(0));
+            int right_id = getGoodVarId(I.getOperand(1));
+            int ret_id   = getGoodVarId(&I);
+            if (good_idx != -1) {   // optimizedInstrumentation
+                /*
+                llvm::errs() << "FROM" << I << "\n";
+                for (auto m : mappings[good_idx]) {
+                    llvm::errs() << *m.first << " to ";
+                    llvm::errs() << *m.second << "\n";
+                }*/
+                auto inst = dyn_cast<Instruction>(mappings[good_idx][&I]);
+                assert(inst);
+                // 通过mappings做指令映射
+                instrumentAboutGoodVariable(*inst, mut_from, mut_to, good_from,
+                                            good_to, &I == first_goodvar_inst,
+                                            left_id, right_id, ret_id);
+            }
+            // llvm::errs() << "TO" << I << "\n";
+            instrumentAboutGoodVariable(I, mut_from, mut_to, good_from, good_to,
+                                        &I == first_goodvar_inst, left_id, right_id,
+                                        ret_id);
+            aboutGoodVariables = true;
+        } 
+        else {
+            if (bad_idx != -1) {    // optimizedInstrumentation
+                /*
+                llvm::errs() << "FROM" << I << "\n";
+                for (auto m : mappings[bad_idx]) {
+                    llvm::errs() << *m.first << " to ";
+                    llvm::errs() << *m.second << "\n";
+                }*/
+                auto inst = dyn_cast<Instruction>(mappings[bad_idx][&I]);
+                assert(inst);
+                instrumentAsDMA(*inst, mut_from, mut_to);
+            }
+            // llvm::errs() << "TO" << I << "\n";
+            instrumentAsDMA(I, mut_from, mut_to);
+        }
+        instMutsMap.erase(&I);
+
+    } 
+    else {  // 限定了使用了goodVariables的指令中一定含有变异？？？
+        if (goodVariables.count(&I) == 1 || hasUsedPreviousGoodVariables(&I)) {
+            errs() << I << "\n";
+            assert(false);
+        }
     }
   }
   return aboutGoodVariables;

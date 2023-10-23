@@ -48,6 +48,9 @@ struct DuplicatedBlockResult {
       : orig(orig), phiguard(phiguard), vmapList(vmapList) {}
 };
 
+// - left_id
+// - right_id
+// - ret_id
 struct IDTuple {
   int left_id;
   int right_id;
@@ -119,7 +122,8 @@ private:
   StructType *buildMutSpecsType(int length);
   GlobalVariable *
   getMutSpecsGVFromAllList(int length,
-                           const std::list<std::pair<int, int>> &all);
+                           const std::list<std::pair<int, int>> &all,
+                           string name);
   void buildMutSpecsGV(std::list<std::pair<int, int>> gvspec);
   void printMutSpecsGV(const std::list<std::pair<int, int>> gvspec);
   std::map<int, GlobalVariable *> mutSpecsDepGVs;
