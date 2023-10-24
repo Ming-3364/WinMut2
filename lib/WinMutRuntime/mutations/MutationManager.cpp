@@ -170,179 +170,180 @@ void MutationManager::divide_eqclass_goodvar(int from, int to,
   eq_num = 0;
   int eq_pos = -1;
   for (unsigned i = 0; i < recent_set.size(); ++i) {
-    int64_t result = temp_result[i];
-    int flag = 0;
-    for (int j = 0; j < eq_num; ++j) {
-      if (eq_class[j].value == result) {
-        eq_class[j].mut_id.push_back(recent_set[i]);
-        flag = 1;
-        break;
-      }
-    }
-    if (flag == 0) {
-      if (result == zeroval)
-        eq_pos = eq_num;
-      eq_class[eq_num].value = result;
-      eq_class[eq_num].mut_id.clear();
-      eq_class[eq_num].mut_id.push_back(recent_set[i]);
-      ++eq_num;
-    }
+        int64_t result = temp_result[i];
+        int flag = 0;
+        for (int j = 0; j < eq_num; ++j) {
+        if (eq_class[j].value == result) {
+            eq_class[j].mut_id.push_back(recent_set[i]);
+            flag = 1;
+            break;
+        }
+        }
+        if (flag == 0) {
+            if (result == zeroval)
+                eq_pos = eq_num;
+            eq_class[eq_num].value = result;
+            eq_class[eq_num].mut_id.clear();
+            eq_class[eq_num].mut_id.push_back(recent_set[i]);
+            ++eq_num;
+        }
   }
   // MUTATION_ID must not be zero
-  auto lb =
-      std::upper_bound(forked_active_set.begin(), forked_active_set.end(), to);
-  if (lb != forked_active_set.end()) {
-    if (eq_pos == -1) {
-      eq_class[eq_num].value = zeroval;
-      eq_class[eq_num].mut_id.clear();
-      eq_pos = eq_num;
-      ++eq_num;
+  auto lb = std::upper_bound(forked_active_set.begin(), forked_active_set.end(), to);
+    if (lb != forked_active_set.end()) {
+        if (eq_pos == -1) {
+            eq_class[eq_num].value = zeroval;
+            eq_class[eq_num].mut_id.clear();
+            eq_pos = eq_num;
+            ++eq_num;
+        }
+        for (; lb != forked_active_set.end(); ++lb) {
+            eq_class[eq_pos].mut_id.push_back(*lb);
+        }
     }
-    for (; lb != forked_active_set.end(); ++lb) {
-      eq_class[eq_pos].mut_id.push_back(*lb);
-    }
-  }
 }
 
 void MutationManager::filter_mutants(const goodvar_mutant_specs_type &depSpec,
                                      int classid) {
-  if (eq_class[classid].mut_id[0] == 0) {
-    for (int i = 0; i < depSpec->length; ++i) {
-      for (int j = depSpec->mutSpecs[i].from; j <= depSpec->mutSpecs[i].to;
-           ++j) {
-        default_active_set[j] = 0;
-      }
+    if (eq_class[classid].mut_id[0] == 0) {
+        // 将goodvar依赖的变异标记为已执行
+        for (int i = 0; i < depSpec->length; ++i) {
+            for (int j = depSpec->mutSpecs[i].from; j <= depSpec->mutSpecs[i].to; ++j) {
+                default_active_set[j] = 0;
+            }
+        }
+        /*
+        for (auto mutspec : spec) {
+        for (int j = mutspec.from; j <= mutspec.to; ++j) {
+            default_active_set[j] = 0;
+        }
+        }
+        */
+        for (int m : eq_class[classid].mut_id) {
+            default_active_set[m] = 1;
+        }
+    } 
+    else {
+        forked_active_set.clear();
+        forked_active_set = eq_class[classid].mut_id;
     }
-    /*
-    for (auto mutspec : spec) {
-      for (int j = mutspec.from; j <= mutspec.to; ++j) {
-        default_active_set[j] = 0;
-      }
-    }
-    */
-    for (int m : eq_class[classid].mut_id) {
-      default_active_set[m] = 1;
-    }
-  } else {
-    forked_active_set.clear();
-    forked_active_set = eq_class[classid].mut_id;
-  }
 }
 int64_t MutationManager::fork_eqclass(const char *moduleName,
                                       const goodvar_mutant_specs_type &depSpec,
                                       int offset) {
-  if (eq_num == 0) {
-    ALWAYS_LOG("eq_num is 0");
-    exit(-1);
-  }
-
-  int64_t result = eq_class[0].value;
-  if (get_default_timer() != 0) {
-    if (likely(MUTATION_ID != 0))
-      accmut_disable_real_timer();
-    for (int i = 1; i < eq_num; ++i) {
-
-      auto start = std::chrono::steady_clock::now();
-
-      sigset_t mask, orig_mask;
-      sigemptyset(&mask);
-      sigaddset(&mask, SIGCHLD);
-      if (sigprocmask(SIG_BLOCK, &mask, &orig_mask) < 0) {
+    if (eq_num == 0) {
+        ALWAYS_LOG("eq_num is 0");
         exit(-1);
-      }
-
-      int pid = __accmut_libc_fork();
-      if (pid < 0) {
-        LOG("fork FAILED");
-        exit(ENV_ERR);
-      }
-
-      if (pid == 0) {
-        accmut_set_handlers();
-        accmut_set_timer(get_default_timer());
-        if (sigprocmask(SIG_SETMASK, &orig_mask, nullptr) < 0) {
-          exit(-1);
-        }
-
-        filter_mutants(depSpec, i);
-        {
-          PageProtector pg(&MUTATION_ID, 1);
-          MUTATION_ID = eq_class[i].mut_id[0];
-          MUTATION_ID_LOCAL = eq_class[i].mut_id[0] - offset;
-
-          accmut::MirrorFileSystem::getInstance()->setVirtual();
-          accmut::OpenFileTable::getInstance()->setVirtual();
-        }
-        return eq_class[i].value;
-      } else {
-        struct timespec timeout;
-        auto setusec = get_default_timer() * eq_class[i].mut_id.size() * 2;
-
-        timeout.tv_sec = setusec / 1000000;
-        timeout.tv_nsec = (setusec % 1000000) * 1000;
-        do {
-          if (sigtimedwait(&mask, nullptr, &timeout) < 0) {
-            if (errno == EINTR) {
-              continue;
-            } else if (errno == EAGAIN) {
-              kill(pid, SIGKILL);
-            } else {
-              __accmut_libc_perror("t");
-              fprintf(stderr, "%ld %ld\n", timeout.tv_sec, timeout.tv_nsec);
-              if (__accmut_libc_write(STDERR_FILENO, "ttimedwait err\n", 15))
-                exit(-1);
-              exit(-1);
-            }
-          }
-          break;
-        } while (true);
-        if (sigprocmask(SIG_SETMASK, &orig_mask, nullptr) < 0) {
-          if (__accmut_libc_write(STDERR_FILENO, "remove mask err\n", 5))
-            exit(-1);
-          exit(-1);
-        }
-
-        int status;
-
-        int pr = waitpid(pid, &status, 0);
-        auto end = std::chrono::steady_clock::now();
-        auto usec =
-            std::chrono::duration_cast<std::chrono::nanoseconds>(end - start)
-                .count();
-
-        char buf[1000];
-        {
-          int from = depSpec->mutSpecs[0].from;
-          int to = depSpec->mutSpecs[depSpec->totlength - 1].to;
-          if (WIFEXITED(status)) {
-            sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld/r%d\n", MUTATION_ID, from,
-                    to, eq_class[i].mut_id[0], moduleName,
-                    eq_class[i].mut_id[0] - offset, usec, WEXITSTATUS(status));
-          } else if (WIFSIGNALED(status)) {
-            sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld/s%d\n", MUTATION_ID, from,
-                    to, eq_class[i].mut_id[0], moduleName,
-                    eq_class[i].mut_id[0] - offset, usec, WTERMSIG(status));
-          } else {
-            sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld\n", MUTATION_ID, from, to,
-                    eq_class[i].mut_id[0], moduleName,
-                    eq_class[i].mut_id[0] - offset, usec);
-          }
-        }
-        writeToLogFile("forked", buf);
-        sprintf(buf, "%s-%d\n", moduleName, eq_class[i].mut_id[0] - offset);
-        writeToLogFile("forked-simple", buf);
-
-        if (pr < 0) {
-          kill(pid, SIGKILL);
-          LOG("waitpid ERR\n");
-        }
-      }
     }
-    if (likely(MUTATION_ID != 0))
-      accmut_set_real_timer(get_default_timer() * 2);
-  }
-  filter_mutants(depSpec, 0);
-  return result;
+
+    int64_t result = eq_class[0].value;
+    if (get_default_timer() != 0) {
+        if (likely(MUTATION_ID != 0))
+            accmut_disable_real_timer();
+        for (int i = 1; i < eq_num; ++i) {
+
+            auto start = std::chrono::steady_clock::now();
+
+            sigset_t mask, orig_mask;
+            sigemptyset(&mask);
+            sigaddset(&mask, SIGCHLD);
+            if (sigprocmask(SIG_BLOCK, &mask, &orig_mask) < 0) {
+                exit(-1);
+            }
+
+            int pid = __accmut_libc_fork();
+            if (pid < 0) {
+                LOG("fork FAILED");
+                exit(ENV_ERR);
+            }
+
+            if (pid == 0) { // 子进程中
+                accmut_set_handlers();
+                accmut_set_timer(get_default_timer());
+                if (sigprocmask(SIG_SETMASK, &orig_mask, nullptr) < 0) {
+                    exit(-1);
+                }
+
+                filter_mutants(depSpec, i);
+                {
+                    PageProtector pg(&MUTATION_ID, 1);
+                    MUTATION_ID = eq_class[i].mut_id[0];
+                    MUTATION_ID_LOCAL = eq_class[i].mut_id[0] - offset;
+
+                    accmut::MirrorFileSystem::getInstance()->setVirtual();
+                    accmut::OpenFileTable::getInstance()->setVirtual();
+                }
+                return eq_class[i].value;
+            } else {        // 父进程中
+                struct timespec timeout;
+                auto setusec = get_default_timer() * eq_class[i].mut_id.size() * 2;
+
+                timeout.tv_sec = setusec / 1000000;
+                timeout.tv_nsec = (setusec % 1000000) * 1000;
+                do {
+                    if (sigtimedwait(&mask, nullptr, &timeout) < 0) {
+                        if (errno == EINTR) {
+                        continue;
+                        } else if (errno == EAGAIN) {
+                        kill(pid, SIGKILL);
+                        } else {
+                        __accmut_libc_perror("t");
+                        fprintf(stderr, "%ld %ld\n", timeout.tv_sec, timeout.tv_nsec);
+                        if (__accmut_libc_write(STDERR_FILENO, "ttimedwait err\n", 15))
+                            exit(-1);
+                        exit(-1);
+                        }
+                    }
+                    break;
+                } while (true);
+                if (sigprocmask(SIG_SETMASK, &orig_mask, nullptr) < 0) {
+                    if (__accmut_libc_write(STDERR_FILENO, "remove mask err\n", 5))
+                        exit(-1);
+                    exit(-1);
+                }
+
+                int status;
+
+                int pr = waitpid(pid, &status, 0);
+                auto end = std::chrono::steady_clock::now();
+                auto usec =
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(end - start)
+                        .count();
+
+                char buf[1000];
+                {
+                    int from = depSpec->mutSpecs[0].from;
+                    int to = depSpec->mutSpecs[depSpec->totlength - 1].to;
+
+                    if (WIFEXITED(status)) {
+                        sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld/r%d\n", MUTATION_ID, from,
+                                to, eq_class[i].mut_id[0], moduleName,
+                                eq_class[i].mut_id[0] - offset, usec, WEXITSTATUS(status));
+                    } else if (WIFSIGNALED(status)) {
+                        sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld/s%d\n", MUTATION_ID, from,
+                                to, eq_class[i].mut_id[0], moduleName,
+                                eq_class[i].mut_id[0] - offset, usec, WTERMSIG(status));
+                    } else {
+                        sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld\n", MUTATION_ID, from, to,
+                                eq_class[i].mut_id[0], moduleName,
+                                eq_class[i].mut_id[0] - offset, usec);
+                    }
+                }
+                writeToLogFile("forked", buf);
+                sprintf(buf, "%s-%d\n", moduleName, eq_class[i].mut_id[0] - offset);
+                writeToLogFile("forked-simple", buf);
+
+                if (pr < 0) {
+                    kill(pid, SIGKILL);
+                    LOG("waitpid ERR\n");
+                }
+            }
+        }
+        if (likely(MUTATION_ID != 0))
+            accmut_set_real_timer(get_default_timer() * 2);
+    }
+    filter_mutants(depSpec, 0);
+    return result;
 }
 int32_t MutationManager::cal_i32_arith(int32_t op, int32_t a, int32_t b) {
   return cal_T_arith<int32_t, uint32_t>(op, a, b, INT32_MAX);

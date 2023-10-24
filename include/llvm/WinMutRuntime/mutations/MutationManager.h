@@ -252,19 +252,23 @@ private:
   public:
     GoodVarTable(int maxNumOfGoodVar, int maxNumOfMutants,
                  GoodVarTableType *tbllst, GoodVarEntryType *ptr) {
-      // assume available size of table is
-      // sizeof(GoodVarTableType) * maxNumOfGoodVar
-      // assume available size of ptr is
-      // sizeof(GoodVarEntryType) * maxNumOfMutants * maxNumOfGoodVar
-      goodVarTableList = tbllst;
-      for (int i = 0; i < maxNumOfGoodVar; ++i) {
-        goodVarTableList[i] =
-            MemVecNonHolding<GoodVarEntryType>(ptr + maxNumOfMutants * i);
-      }
+        // assume available size of table is
+        // sizeof(GoodVarTableType) * maxNumOfGoodVar
+        // assume available size of ptr is
+        // sizeof(GoodVarEntryType) * maxNumOfMutants * maxNumOfGoodVar
+        goodVarTableList = tbllst;
+        for (int i = 0; i < maxNumOfGoodVar; ++i) {
+            goodVarTableList[i] =
+                MemVecNonHolding<GoodVarEntryType>(ptr + maxNumOfMutants * i);
+        }
     }
-    GoodVarTableType &operator[](size_t id) { return goodVarTableList[id]; }
+
+    GoodVarTableType &operator[](size_t id) {
+        return goodVarTableList[id]; 
+    }
+
     const GoodVarTableType &operator[](size_t id) const {
-      return goodVarTableList[id];
+        return goodVarTableList[id];
     }
   };
 
@@ -405,25 +409,26 @@ public:
                                               GoodvarArg *arg);
 };
 
+// variant：变体
 void MutationManager::filter_variant(int from, int to) {
-  recent_set.clear();
-  if (MUTATION_ID == 0) {
-    recent_set.push_back(0);
-    for (int i = from; i <= to; ++i) {
-      if (default_active_set[i] == 1) {
-        recent_set.push_back(i);
-      }
+    recent_set.clear();
+    if (MUTATION_ID == 0) { // 原始进程
+        recent_set.push_back(0);    // 0号变异表示无变异，在MUTATION_ID中标识出原始进程
+        for (int i = from; i <= to; ++i) {
+            if (default_active_set[i] == 1) {
+                recent_set.push_back(i);
+            }
+        }
+    } else {    // 子进程
+        for (int m : forked_active_set) {
+            if (m >= from && m <= to) {
+                recent_set.push_back(m);
+            }
+        }
+        if (recent_set.empty()) {
+            exit(MALLOC_ERR);
+        }
     }
-  } else {
-    for (int m : forked_active_set) {
-      if (m >= from && m <= to) {
-        recent_set.push_back(m);
-      }
-    }
-    if (recent_set.empty()) {
-      exit(MALLOC_ERR);
-    }
-  }
 }
 
 void MutationManager::filter_variant_goodvar(int from, int to) {
@@ -590,14 +595,16 @@ template <typename OpType, typename RetType>
 RetType MutationManager::process_T_arith(RegMutInfo *rmi, int from, int to,
                                          OpType left, OpType right, int op,
                                          RetType (*calc)(int, OpType, OpType)) {
-  using namespace std::chrono;
-  if (unlikely(system_disabled() || !system_initialized()))
-    return calc(op, left, right);
+    using namespace std::chrono;
+    if (unlikely(system_disabled() || !system_initialized()))
+        return calc(op, left, right);
+
 #ifdef CLOCK
-  auto start = high_resolution_clock::now();
+    auto start = high_resolution_clock::now();
 #endif
-  from += rmi->offset;
-  to += rmi->offset;
+
+    from += rmi->offset;
+    to += rmi->offset;
 
 #if 0
   if (MUTATION_ID != 0) {
@@ -608,62 +615,63 @@ RetType MutationManager::process_T_arith(RegMutInfo *rmi, int from, int to,
   }
 #endif
 
-  if (likely(MUTATION_ID != 0)) {
-    if (likely(MUTATION_ID > to || MUTATION_ID < from)) {
-      return calc(op, left, right);
+    if (likely(MUTATION_ID != 0)) { // 在子进程中
+        if (likely(MUTATION_ID > to || MUTATION_ID < from)) {   // 不在本BB的考量范围内
+            return calc(op, left, right);
+        }
     }
-  }
-  filter_variant(from, to);
-  temp_result.clear();
-  for (int &i : recent_set) {
-    auto mut_res = process_T_calc_mutation(op, left, right, calc, i);
-    temp_result.push_back(mut_res);
-  }
-  if (recent_set.size() == 1) {
-    if (MUTATION_ID < from || MUTATION_ID > to) {
-      return calc(op, left, right);
+
+    filter_variant(from, to);
+    temp_result.clear();
+    for (int &i : recent_set) {
+        auto mut_res = process_T_calc_mutation(op, left, right, calc, i);
+        temp_result.push_back(mut_res);
     }
-    return temp_result[0];
-  }
+    if (recent_set.size() == 1) {
+        if (MUTATION_ID < from || MUTATION_ID > to) {
+        return calc(op, left, right);
+        }
+        return temp_result[0];
+    }
 
-  divide_eqclass();
+    divide_eqclass();
 
-  /*
-    MutSpec spec;
-    spec.from = from;
-    spec.to = to;
-    return fork_eqclass(goodvar_mutant_specs_type{spec}, rmi->offset);
-    */
-  MutSpecs specs{};
-  specs.length = 1;
-  specs.totlength = 1;
-  specs.mutSpecs[0].from = from;
-  specs.mutSpecs[0].to = to;
+    /*
+        MutSpec spec;
+        spec.from = from;
+        spec.to = to;
+        return fork_eqclass(goodvar_mutant_specs_type{spec}, rmi->offset);
+        */
+    MutSpecs specs{};
+    specs.length = 1;
+    specs.totlength = 1;
+    specs.mutSpecs[0].from = from;
+    specs.mutSpecs[0].to = to;
 
-#ifdef CLOCK
-  auto end = high_resolution_clock::now();
-  char buf[1024];
-  snprintf(buf, 1024, "3: %ld %ld\n",
-           duration_cast<nanoseconds>(end - start).count(), recent_set.size());
-  write(STDERR_FILENO, buf, strlen(buf));
-#endif
-
-  auto ret = fork_eqclass(rmi->moduleName,
-                          &specs
-                          // goodvar_mutant_specs_type{spec}
-                          ,
-                          rmi->offset);
-  /*
-  if (ret != ori) {
+    #ifdef CLOCK
+    auto end = high_resolution_clock::now();
     char buf[1024];
-    snprintf(buf, 1024, "%lx %lx %lx\n", (int64_t)ret, (int64_t)ori,
-  eq_class[0].value); write(STDERR_FILENO, "FUCK\n", 5); write(STDERR_FILENO,
-  buf, strlen(buf)); for (int i = 0; i < recent_set.size(); ++i) { snprintf(buf,
-  1024, "%d:%lx ", recent_set[i], temp_result[i]); write(STDERR_FILENO, buf,
-  strlen(buf));
-    }
-    write(STDERR_FILENO, "\n", 1);
-  }*/
+    snprintf(buf, 1024, "3: %ld %ld\n",
+            duration_cast<nanoseconds>(end - start).count(), recent_set.size());
+    write(STDERR_FILENO, buf, strlen(buf));
+    #endif
+
+    auto ret = fork_eqclass(rmi->moduleName,
+                            &specs
+                            // goodvar_mutant_specs_type{spec}
+                            ,
+                            rmi->offset);
+    /*
+    if (ret != ori) {
+        char buf[1024];
+        snprintf(buf, 1024, "%lx %lx %lx\n", (int64_t)ret, (int64_t)ori,
+    eq_class[0].value); write(STDERR_FILENO, "FUCK\n", 5); write(STDERR_FILENO,
+    buf, strlen(buf)); for (int i = 0; i < recent_set.size(); ++i) { snprintf(buf,
+    1024, "%d:%lx ", recent_set[i], temp_result[i]); write(STDERR_FILENO, buf,
+    strlen(buf));
+        }
+        write(STDERR_FILENO, "\n", 1);
+    }*/
   return ret;
 }
 
@@ -687,7 +695,7 @@ RetType MutationManager::process_T_arith_goodvar(OpType left, OpType right,
     // SKIP         2
     // EXECUTE      3
     switch (arg->status) {
-        case EXECUTE: {
+        case EXECUTE: { // 直接执行，返回运算结果
             #ifdef DEBUG_OUTPUT
                 int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
                 snprintf(buf, 1024, "EXECUTE: %d %d\n", MUTATION_ID, from);
@@ -698,14 +706,14 @@ RetType MutationManager::process_T_arith_goodvar(OpType left, OpType right,
         }
 
         case BADVARLIKE: { // 在基本块外被使用，badvar，需分流
-        #ifdef DEBUG_OUTPUT
-            int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
-            snprintf(buf, 1024, "BVL: %d %d\n", MUTATION_ID, from);
-            write(fd, buf, strlen(buf));
-            close(fd);
-        #endif
-            return process_T_arith(arg->rmi, arg->from_local, arg->to_local, left,
-                                right, op, f);
+            #ifdef DEBUG_OUTPUT
+                int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
+                snprintf(buf, 1024, "BVL: %d %d\n", MUTATION_ID, from);
+                write(fd, buf, strlen(buf));
+                close(fd);
+            #endif
+                return process_T_arith(arg->rmi, arg->from_local, arg->to_local, left,
+                                    right, op, f);
         }
         /*
         case SKIP: {
@@ -720,7 +728,7 @@ RetType MutationManager::process_T_arith_goodvar(OpType left, OpType right,
             return f(op, left, right);
         }
         */
-        default: { // NORMAL / SKIP
+        default: { // NORMAL / SKIP（SKIP状态被跳过了，不调用运行时库）
             #ifdef DEBUG_OUTPUT
                 int fd = open("eq_class", O_CREAT | O_APPEND | O_WRONLY, 0644);
                 snprintf(buf, 1024, "RUN: %d %d\n", MUTATION_ID, from);
@@ -753,11 +761,14 @@ RetType MutationManager::process_T_arith_goodvar(OpType left, OpType right,
             #ifdef CLOCK
                 auto start = high_resolution_clock::now();
             #endif
-            int goodvar_from = arg->good_from;
-            int goodvar_to = arg->good_to;
 
+            int goodvar_from = arg->good_from;
+            int goodvar_to   = arg->good_to;
+
+            // 执行的变异不在本次处理的考虑范围内
             if (unlikely(MUTATION_ID != 0) 
-                && unlikely(MUTATION_ID > goodvar_to || MUTATION_ID < goodvar_from)) {
+                && unlikely(MUTATION_ID > goodvar_to || MUTATION_ID < goodvar_from)) 
+            {
                 return f(op, left, right);
             }
 
@@ -774,7 +785,9 @@ RetType MutationManager::process_T_arith_goodvar(OpType left, OpType right,
                 } 
                 else {
             #endif
+
                     process_T_calc_goodvar(op, left, right, f, arg->left_id, arg->right_id);
+            
             #ifndef BUGGY
                 }
             #endif
@@ -869,7 +882,8 @@ RetType MutationManager::process_T_arith_goodvar(OpType left, OpType right,
                     if (forked_active_set.size() == 1) {
                         for (int i = 0; i < arg->inblock->len; ++i) {
                             auto x = arg->inblock->goodvarArgs[i];
-                            if (x->from <= MUTATION_ID && x->to >= MUTATION_ID) {
+                            // x->form <= MUTATION_ID <= x->to
+                            if (x->from <= MUTATION_ID && x->to >= MUTATION_ID) {   
                                 arg->inblock->goodvarArgs[i]->status = EXECUTE;
                             } 
                             else {
@@ -1080,29 +1094,33 @@ void MutationManager::process_T_calc_goodvar(int op, OpType left, OpType right,
   auto left_it = left_goodvar.begin();
   auto right_it = right_goodvar.begin();
 
-  if (MUTATION_ID == 0) {
+  if (MUTATION_ID == 0) {   // 原始进程
+    // 一阶变异分析，只执行一个变异
     for (; left_it != left_goodvar.end() && right_it != right_goodvar.end();) {
-      if (left_it->first < right_it->first) {
-        if (default_active_set[left_it->first] == 1) {
-          recent_set.push_back(left_it->first);
-          temp_result.push_back(f(op, left_it->second, right));
+        if (left_it->first < right_it->first) {
+            if (default_active_set[left_it->first] == 1) {
+                recent_set.push_back(left_it->first);
+                temp_result.push_back(f(op, left_it->second, right));
+            }
+            ++left_it;
+        } 
+        else if (left_it->first > right_it->first) {
+            if (default_active_set[right_it->first] == 1) {
+                recent_set.push_back(right_it->first);
+                temp_result.push_back(f(op, left, right_it->second));
+            }
+            ++right_it;
+        } 
+        else {
+            if (default_active_set[left_it->first] == 1) {
+                recent_set.push_back(left_it->first);
+                temp_result.push_back(f(op, left_it->second, right_it->second));
+            }
+            ++left_it;
+            ++right_it;
         }
-        ++left_it;
-      } else if (left_it->first > right_it->first) {
-        if (default_active_set[right_it->first] == 1) {
-          recent_set.push_back(right_it->first);
-          temp_result.push_back(f(op, left, right_it->second));
-        }
-        ++right_it;
-      } else {
-        if (default_active_set[left_it->first] == 1) {
-          recent_set.push_back(left_it->first);
-          temp_result.push_back(f(op, left_it->second, right_it->second));
-        }
-        ++left_it;
-        ++right_it;
-      }
     }
+
     while (left_it != left_goodvar.end()) {
       if (default_active_set[left_it->first] == 1) {
         recent_set.push_back(left_it->first);
@@ -1110,6 +1128,7 @@ void MutationManager::process_T_calc_goodvar(int op, OpType left, OpType right,
       }
       ++left_it;
     }
+
     while (right_it != right_goodvar.end()) {
       if (default_active_set[right_it->first] == 1) {
         recent_set.push_back(right_it->first);
@@ -1117,57 +1136,60 @@ void MutationManager::process_T_calc_goodvar(int op, OpType left, OpType right,
       }
       ++right_it;
     }
-  } else {
-    auto active_it = forked_active_set.begin();
+  } 
+  else {                    // 子进程
+    auto active_it = forked_active_set.begin(); // 等价类中的mut_id
     while (left_it != left_goodvar.end() && right_it != right_goodvar.end()) {
-      if (*active_it > left_it->first) {
-        ++left_it;
-        continue;
-      }
-      if (*active_it > right_it->first) {
-        ++right_it;
-        continue;
-      }
-      // invariant: min(left_it->first, right_it->first) == *active_it
-      if (left_it->first < right_it->first) {
-        recent_set.push_back(left_it->first);
-        temp_result.push_back(f(op, left_it->second, right));
-        ++left_it;
-      } else if (left_it->first > right_it->first) {
-        recent_set.push_back(right_it->first);
-        temp_result.push_back(f(op, left, right_it->second));
-        ++right_it;
-      } else {
-        recent_set.push_back(left_it->first);
-        temp_result.push_back(f(op, left_it->second, right_it->second));
-        ++left_it;
-        ++right_it;
-      }
+        if (*active_it > left_it->first) {
+            ++left_it;
+            continue;
+        }
+        if (*active_it > right_it->first) {
+            ++right_it;
+            continue;
+        }
+        // *active_it <=left_it->first && *active_it <= right_it->first
+        // invariant: min(left_it->first, right_it->first) == *active_it
+        if (left_it->first < right_it->first) {
+            recent_set.push_back(left_it->first);
+            temp_result.push_back(f(op, left_it->second, right));
+            ++left_it;
+        } 
+        else if (left_it->first > right_it->first) {
+            recent_set.push_back(right_it->first);
+            temp_result.push_back(f(op, left, right_it->second));
+            ++right_it;
+        } 
+        else {
+            recent_set.push_back(left_it->first);
+            temp_result.push_back(f(op, left_it->second, right_it->second));
+            ++left_it;
+            ++right_it;
+        }
     }
-    while (left_it != left_goodvar.end() &&
-           active_it != forked_active_set.end()) {
-      if (left_it->first == *active_it) {
-        recent_set.push_back(left_it->first);
-        temp_result.push_back(f(op, left_it->second, right));
-        ++active_it;
-        ++left_it;
-      } else if (left_it->first < *active_it) {
-        ++left_it;
-      } else {
-        assert(false);
-      }
+    while (left_it != left_goodvar.end() && active_it != forked_active_set.end()) {
+        if (left_it->first == *active_it) {
+            recent_set.push_back(left_it->first);
+            temp_result.push_back(f(op, left_it->second, right));
+            ++active_it;
+            ++left_it;
+        } else if (left_it->first < *active_it) {
+            ++left_it;
+        } else {
+            assert(false);
+        }
     }
     while (right_it != right_goodvar.end()) {
-      if (right_it->first == *active_it) {
-        recent_set.push_back(right_it->first);
-        temp_result.push_back(f(op, left, right_it->second));
-        ++active_it;
-        ++right_it;
-      } else if (right_it->first < *active_it) {
-        ++right_it;
-      } else {
-        assert(false);
-      }
+        if (right_it->first == *active_it) {
+            recent_set.push_back(right_it->first);
+            temp_result.push_back(f(op, left, right_it->second));
+            ++active_it;
+            ++right_it;
+        } else if (right_it->first < *active_it) {
+            ++right_it;
+        } else {
+            assert(false);
+        }
     }
   }
 }
@@ -1177,10 +1199,10 @@ template <typename OpType, typename RetType>
 void MutationManager::process_T_calc_goodvar_for_badvar_and_forked(
     int op, OpType left, OpType right, RetType (*f)(int, OpType, OpType),
     int left_id, int right_id, int from) {
-  GoodVarTableType &left_goodvar = get_goodvar_table()[left_id];
+  GoodVarTableType &left_goodvar  = get_goodvar_table()[left_id];
   GoodVarTableType &right_goodvar = get_goodvar_table()[right_id];
 
-  auto left_it = left_goodvar.begin();
+  auto left_it  = left_goodvar .begin();
   auto right_it = right_goodvar.begin();
 
   auto active_it = forked_active_set.begin();

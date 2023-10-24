@@ -2,9 +2,30 @@
 
 ## 延伸
 
+### 技术模型
+
 - 实现对c源代码中对应的局部变量的融合
 - 针对变异分析，提前进行基本块重构
-- 探索保持变分执行的收益上限
+- **探索保持变分执行的收益上限**
+- 在设计上保留在局部位置执行高阶变异的可能
+- 考虑概率模型？？？
+- 从代码特征入手
+  - 从比较条件顺藤摸瓜，（变量只作为判据，不在if中使用）
+  
+### 磨刀
+
+- 对IR的理解：LLVM语言手册
+- 指导思想：越抽象考虑越慢，具体情况具体分析更快
+  - 挑选具有代表性的实验对象
+  - 对实验对象的代码特征的理解
+- 量子物理的多态与坍缩
+
+### 注意事项
+
+- 考虑统计数据，比如编译时间，运行时库的占用时间，在原始程序中的时间，以及中间空白出的调用时间。
+- 考虑正确性验证，构建进程图
+- **考虑能否通过llvm自己的分析拿到一些数据？？？**
+- 考虑在llvm18上的重构？？
 
 ## TODO
 
@@ -23,7 +44,7 @@
   - [x] HasMutant
   - [x] IsOriginal
     - [x] 如何区分子进程和原始进程
-  - [ ] IsRedundant
+  - [ ] IsRedundant的判据
 
 - [ ] 判断是否需要融合分流
   - [x] get & filter: 找到不在本BB外使用的goodvar，保存为多值变量
@@ -32,9 +53,9 @@
     - [ ] 运行时     ：多值变量参与运算
       - [ ] __accmut__process_i32_arith_GoodVar_init (needInit没有在任何地方被使用，所以init和普通的版本完全一致)
       - [ ] __accmut__process_i32_arith_GoodVar [process_Goodvar](include/llvm/WinMutRuntime/mutations/MutationManager.h#L671)
-      - [ ] __accmut__process_i32_arith [process](include/llvm/WinMutRuntime/mutations/MutationManager.h#L590)
-      - [ ] 多值变量作为操作数
-      - [ ] 多值变量作为结果
+        - [ ] 多值变量作为操作数
+        - [ ] 多值变量作为结果
+      - [x] __accmut__process_i32_arith [process](include/llvm/WinMutRuntime/mutations/MutationManager.h#L590)
 
 ## 抽象
 
