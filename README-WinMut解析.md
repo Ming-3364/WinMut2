@@ -52,10 +52,17 @@
     - [ ] 创建运行环境：多值变量存储
     - [ ] 运行时     ：多值变量参与运算
       - [ ] __accmut__process_i32_arith_GoodVar_init (needInit没有在任何地方被使用，所以init和普通的版本完全一致)
-      - [ ] __accmut__process_i32_arith_GoodVar [process_Goodvar](include/llvm/WinMutRuntime/mutations/MutationManager.h#L671)
+      - [ ] __accmut__process_i32_arith_GoodVar [process_Goodvar](include/llvm/WinMutRuntime/mutations/MutationManager.h#L679)
         - [ ] 多值变量作为操作数
         - [ ] 多值变量作为结果
       - [x] __accmut__process_i32_arith [process](include/llvm/WinMutRuntime/mutations/MutationManager.h#L590)
+
+- [ ] 搭实验环境
+  - [ ] shell语法
+  - [ ] 看run.sh
+  - [ ] makefile语法
+  - [ ] 测试项目的执行
+  - [ ] 编写demo，插入正确性验证和效率分析代码
 
 ## 抽象
 
@@ -75,9 +82,12 @@ winmut中一共实现了3级：
 
 1. 函数级
 
-   - 判据：mutid != 0 && (mutid < left || mutid > right) [函数级](lib/Transforms/WinMut/WAInstrumenter.cpp#L646)
+    - 判据：mutid != 0 && (mutid < left || mutid > right) [函数级](lib/Transforms/WinMut/WAInstrumenter.cpp#L646)
 
 2. 基本块级
+
+    - 判据：mutid.local != 0
+
 3. 指令级（仅涉及goodvar）
 
    - 判据：全局变量GoodvarArg->status（在运行时被改变，改了之后再fork，从而影响子进程）

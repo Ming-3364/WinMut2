@@ -138,9 +138,14 @@ WinMut的剪枝体现在？？？
 
 ### 源码 [Doc](README-WinMut解析.md)
 
+- 2023-10-25
+
+  - [ ] 分析process_goodvar源码（OTHERS）
+  - [ ] 优化二（优化插入）的判据
+
 - 2023-10-24
 
-  - [ ] 分析process_goodvar源码
+  - [ ] 分析process_goodvar源码（NORMAL）
   - [x] 分析process源码
 
 ### 启动
