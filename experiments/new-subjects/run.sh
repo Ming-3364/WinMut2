@@ -72,7 +72,9 @@ helpmsg() {
 	exit -1
 }
 
-FILENAME="${0}"
+# main #
+
+FILENAME="${0}" # 脚本名
 SUBJECT="${1}"
 TASK="${2}"
 ALGO="${3}"

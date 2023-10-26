@@ -136,16 +136,23 @@ WinMut的剪枝体现在？？？
 
 ## 日报
 
+### 搭建实验环境
+
+- 2023-10-26
+
+  - [x] shell语法
+  - [x] 看run.sh
+
 ### 源码 [Doc](README-WinMut解析.md)
 
 - 2023-10-25
 
-  - [ ] 分析process_goodvar源码（OTHERS）
-  - [ ] 优化二（优化插入）的判据
+  - [x] 分析process_goodvar源码（OTHERS）
+  - [x] 优化二（优化插入）的判据
 
 - 2023-10-24
 
-  - [ ] 分析process_goodvar源码（NORMAL）
+  - [x] 分析process_goodvar源码（NORMAL）
   - [x] 分析process源码
 
 ### 启动

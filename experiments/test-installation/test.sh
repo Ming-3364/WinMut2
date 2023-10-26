@@ -5,6 +5,7 @@ if [ -z ${WINMUT_BASE_DIR+x} ]; then
 fi
 
 TMPFILE=$(mktemp -d)
+echo $TEMPFILE
 cd ${TMPFILE}
 cat << EOF > a.c
 #include <stdio.h>
