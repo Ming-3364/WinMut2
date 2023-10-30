@@ -2794,6 +2794,9 @@ include "CC1Options.td"
 
 include "CLCompatOptions.td"
 
+def inspect_for_mut : Flag<["-", "--"], "inspect-for-mut">, Flags<DriverOption>,
+    HelpText<"inspect source code feature for mutation analysis">;
+
 def mut_instrument : Joined<["-","--"],"mut-analysis-instrument=">,Flags<[DriverOption]>,
   HelpText<"Mutation analysis instrument control">;
 

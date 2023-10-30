@@ -58,11 +58,14 @@
       - [x] __accmut__process_i32_arith [process](include/llvm/WinMutRuntime/mutations/MutationManager.h#L590)
 
 - [ ] 搭实验环境
-  - [ ] shell语法
-  - [ ] 看run.sh
+  - [x] shell语法
+  - [x] 看run.sh
   - [ ] makefile语法
   - [ ] 测试项目的执行
   - [ ] 编写demo，插入正确性验证和效率分析代码
+
+- [ ] 考察
+  - [ ] 十个项目中的模块个数、函数个数和基本块个数
 
 ## 抽象
 
