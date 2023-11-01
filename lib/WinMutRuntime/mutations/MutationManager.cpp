@@ -316,17 +316,20 @@ int64_t MutationManager::fork_eqclass(const char *moduleName,
                     int to = depSpec->mutSpecs[depSpec->totlength - 1].to;
 
                     if (WIFEXITED(status)) {
-                        sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld/r%d\n", MUTATION_ID, from,
-                                to, eq_class[i].mut_id[0], moduleName,
-                                eq_class[i].mut_id[0] - offset, usec, WEXITSTATUS(status));
+                        sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld/r%d\n", 
+                                MUTATION_ID, from, to, eq_class[i].mut_id[0], 
+                                moduleName, eq_class[i].mut_id[0] - offset, 
+                                usec, WEXITSTATUS(status));
                     } else if (WIFSIGNALED(status)) {
-                        sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld/s%d\n", MUTATION_ID, from,
-                                to, eq_class[i].mut_id[0], moduleName,
-                                eq_class[i].mut_id[0] - offset, usec, WTERMSIG(status));
+                        sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld/s%d\n", 
+                                MUTATION_ID, from, to, eq_class[i].mut_id[0], 
+                                moduleName, eq_class[i].mut_id[0] - offset, 
+                                usec, WTERMSIG(status));
                     } else {
-                        sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld\n", MUTATION_ID, from, to,
-                                eq_class[i].mut_id[0], moduleName,
-                                eq_class[i].mut_id[0] - offset, usec);
+                        sprintf(buf, "%d=>%d:%d:%d(%s-%d): %ld\n", 
+                                MUTATION_ID, from, to, eq_class[i].mut_id[0], 
+                                moduleName, eq_class[i].mut_id[0] - offset, 
+                                usec);
                     }
                 }
                 writeToLogFile("forked", buf);
